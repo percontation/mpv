@@ -18,12 +18,12 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <string.h>
+#include <strings.h>
 #include <libgen.h>
 #include <errno.h>
 #include <stdint.h>
@@ -63,6 +63,13 @@
 #define DVDREAD_VERSION LIBDVDREAD_VERSION(0,8,0)
 #endif
 #endif
+
+typedef struct {
+    int id; // 0 - 31 mpeg; 128 - 159 ac3; 160 - 191 pcm
+    int language;
+    int type;
+    int channels;
+} stream_language_t;
 
 typedef struct {
   dvd_reader_t *dvd;
@@ -484,7 +491,8 @@ static int dvd_seek_to_time(stream_t *stream, ifo_handle_t *vts_file, double sec
     do_seek(stream, pos);
     do {
       char buf[2048];
-      dvd_read_sector(stream, stream->priv, buf); // skip
+      if (dvd_read_sector(stream, stream->priv, buf) < 0) // skip
+          break;
       t = mp_dvdtimetomsec(&d->dsi_pack.dsi_gi.c_eltm);
     } while(!t);
     tm = dvd_get_current_time(stream, -1);
@@ -523,11 +531,6 @@ static int control(stream_t *stream,int cmd,void* arg)
         case STREAM_CTRL_GET_TIME_LENGTH:
         {
             *((double *)arg) = (double) mp_get_titleset_length(d->vts_file, d->tt_srpt, d->cur_title)/1000.0;
-            return 1;
-        }
-        case STREAM_CTRL_GET_START_TIME:
-        {
-            *((double *)arg) = 0;
             return 1;
         }
         case STREAM_CTRL_GET_NUM_TITLES:
@@ -612,8 +615,6 @@ static int control(stream_t *stream,int cmd,void* arg)
             snprintf(req->name, sizeof(req->name), "%c%c", lang >> 8, lang);
             return STREAM_OK;
         }
-        case STREAM_CTRL_MANAGES_TIMELINE:
-            return STREAM_OK;
         case STREAM_CTRL_GET_DVD_INFO:
         {
             struct stream_dvd_info_req *req = arg;
@@ -892,6 +893,8 @@ static int open_s(stream_t *stream)
     // ... (unimplemented)
     //    return NULL;
     stream->type = STREAMTYPE_DVD;
+    stream->demuxer = "+disc";
+    stream->lavf_type = "mpeg";
     stream->sector_size = 2048;
     stream->fill_buffer = fill_buffer;
     stream->control = control;
@@ -939,7 +942,7 @@ static int ifo_stream_open (stream_t *stream)
         priv->cfg_title = 0;
 
     free(filename);
-    stream->url=talloc_strdup(stream, "dvd://");
+    stream->url=talloc_strdup(stream, "dvdread://");
 
     return open_s(stream);
 }
@@ -947,7 +950,7 @@ static int ifo_stream_open (stream_t *stream)
 const stream_info_t stream_info_dvd = {
   .name = "dvd",
   .open = open_s,
-  .protocols = (const char*const[]){ "dvd", NULL },
+  .protocols = (const char*const[]){ "dvdread", NULL },
   .priv_size = sizeof(dvd_priv_t),
   .priv_defaults = &stream_priv_dflts,
   .options = stream_opts_fields,

@@ -674,7 +674,7 @@ static void fill_d3d_presentparams(d3d_priv *priv,
     present_params->SwapEffect             =
         priv->opt_swap_discard ? D3DSWAPEFFECT_DISCARD : D3DSWAPEFFECT_COPY;
     present_params->Flags                  = D3DPRESENTFLAG_VIDEO;
-    present_params->hDeviceWindow          = priv->vo->w32->window;
+    present_params->hDeviceWindow          = vo_w32_hwnd(priv->vo);
     present_params->BackBufferWidth        = priv->cur_backbuf_width;
     present_params->BackBufferHeight       = priv->cur_backbuf_height;
     present_params->MultiSampleType        = D3DMULTISAMPLE_NONE;
@@ -713,7 +713,7 @@ static bool change_d3d_backbuffer(d3d_priv *priv)
     if (!priv->d3d_device) {
         if (FAILED(IDirect3D9_CreateDevice(priv->d3d_handle,
                                            D3DADAPTER_DEFAULT,
-                                           DEVTYPE, priv->vo->w32->window,
+                                           DEVTYPE, vo_w32_hwnd(priv->vo),
                                            D3DCREATE_SOFTWARE_VERTEXPROCESSING
                                            | D3DCREATE_FPU_PRESERVE,
                                            &present_params, &priv->d3d_device)))
@@ -846,7 +846,7 @@ static uint32_t d3d_draw_frame(d3d_priv *priv)
     IDirect3DDevice9_Clear(priv->d3d_device, 0, NULL, D3DCLEAR_TARGET, 0, 0, 0);
 
     if (!priv->have_image)
-        return VO_TRUE;
+        goto render_osd;
 
     if (priv->use_textures) {
 
@@ -911,6 +911,8 @@ static uint32_t d3d_draw_frame(d3d_priv *priv)
             return VO_ERROR;
         }
     }
+
+render_osd:
 
     draw_osd(priv->vo);
 
@@ -1397,11 +1399,11 @@ static void draw_image(struct vo *vo, mp_image_t *mpi)
 {
     d3d_priv *priv = vo->priv;
     if (!priv->d3d_device)
-        return;
+        goto done;
 
     struct mp_image buffer;
     if (!get_video_buffer(priv, &buffer))
-        return;
+        goto done;
 
     mp_image_copy(&buffer, mpi);
 
@@ -1417,6 +1419,9 @@ static void draw_image(struct vo *vo, mp_image_t *mpi)
     priv->osd_pts = mpi->pts;
 
     d3d_draw_frame(priv);
+
+done:
+    talloc_free(mpi);
 }
 
 static mp_image_t *get_screenshot(d3d_priv *priv)
@@ -1435,7 +1440,8 @@ static mp_image_t *get_screenshot(d3d_priv *priv)
         return NULL;
 
     struct mp_image *image = mp_image_new_copy(&buffer);
-    mp_image_set_attributes(image, priv->vo->params);
+    if (image)
+        mp_image_set_attributes(image, priv->vo->params);
 
     d3d_unlock_video_objects(priv);
     return image;
@@ -1473,9 +1479,9 @@ static mp_image_t *get_window_screenshot(d3d_priv *priv)
         goto error_exit;
     }
 
-    GetClientRect(priv->vo->w32->window, &window_rc);
+    GetClientRect(vo_w32_hwnd(priv->vo), &window_rc);
     pt = (POINT) { 0, 0 };
-    ClientToScreen(priv->vo->w32->window, &pt);
+    ClientToScreen(vo_w32_hwnd(priv->vo), &pt);
     window_rc.left = pt.x;
     window_rc.top = pt.y;
     window_rc.right += window_rc.left;
@@ -1491,6 +1497,8 @@ static mp_image_t *get_window_screenshot(d3d_priv *priv)
         goto error_exit;
 
     image = mp_image_alloc(IMGFMT_BGR32, width, height);
+    if (!image)
+        goto error_exit;
 
     IDirect3DSurface9_LockRect(surface, &locked_rect, NULL, 0);
 

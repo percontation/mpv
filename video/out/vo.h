@@ -71,7 +71,6 @@ enum mp_voctrl {
     VOCTRL_SET_DEINTERLACE,
     VOCTRL_GET_DEINTERLACE,
 
-    VOCTRL_WINDOW_TO_OSD_COORDS,        // float[2] (x/y)
     VOCTRL_GET_WINDOW_SIZE,             // int[2] (w/h)
     VOCTRL_SET_WINDOW_SIZE,             // int[2] (w/h)
 
@@ -114,7 +113,7 @@ struct voctrl_screenshot_args {
     // The caller has to free the image with talloc_free().
     // It is not specified whether the image data is a copy or references the
     // image data directly.
-    // Is never NULL. (Failure has to be indicated by returning VO_FALSE.)
+    // Can be NULL on failure.
     struct mp_image *out_image;
     // Whether the VO rendered OSD/subtitles into out_image
     bool has_osd;
@@ -165,20 +164,6 @@ struct vo_driver {
     int (*query_format)(struct vo *vo, uint32_t format);
 
     /*
-     * Optional. Can be used to convert the input image into something VO
-     * internal, such as GPU surfaces. Ownership of mpi is passed to the
-     * function, and the returned image is owned by the caller.
-     * The following guarantees are given:
-     * - mpi has the format with which the VO was configured
-     * - the returned image can be arbitrary, and the VO merely manages its
-     *   lifetime
-     * - images passed to draw_image are always passed through this function
-     * - the maximum number of images kept alive is not over vo->max_video_queue
-     * - if vo->max_video_queue is large enough, some images may be buffered ahead
-     */
-    struct mp_image *(*filter_image)(struct vo *vo, struct mp_image *mpi);
-
-    /*
      * Initialize or reconfigure the display driver.
      *   params: video parameters, like pixel format and frame size
      *   flags: combination of VOFLAG_ values
@@ -194,8 +179,7 @@ struct vo_driver {
     /*
      * Render the given frame to the VO's backbuffer. This operation will be
      * followed by a draw_osd and a flip_page[_timed] call.
-     * mpi belongs to the caller; if the VO needs it longer, it has to create
-     * a new reference to mpi.
+     * mpi belongs to the VO; the VO must free it eventually.
      *
      * This also should draw the OSD.
      */
@@ -294,9 +278,6 @@ struct mp_keymap {
   int to;
 };
 int lookup_keymap_table(const struct mp_keymap *map, int key);
-
-void vo_mouse_movement(struct vo *vo, int posx, int posy);
-void vo_drop_files(struct vo *vo, int num_files, char **files);
 
 struct mp_osd_res;
 void vo_get_src_dst_rects(struct vo *vo, struct mp_rect *out_src,

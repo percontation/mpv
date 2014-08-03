@@ -26,6 +26,7 @@
 
 #include "config.h"
 
+#include "common/common.h"
 #include "common/global.h"
 #include "common/msg.h"
 #include "options/m_option.h"
@@ -71,6 +72,7 @@ extern const vf_info_t vf_info_lavfi;
 extern const vf_info_t vf_info_vaapi;
 extern const vf_info_t vf_info_vapoursynth;
 extern const vf_info_t vf_info_vdpaupp;
+extern const vf_info_t vf_info_buffer;
 
 // list of available filters:
 static const vf_info_t *const filter_list[] = {
@@ -108,6 +110,7 @@ static const vf_info_t *const filter_list[] = {
     &vf_info_sub,
     &vf_info_yadif,
     &vf_info_stereo3d,
+    &vf_info_buffer,
 #if HAVE_DLOPEN
     &vf_info_dlopen,
 #endif
@@ -200,17 +203,19 @@ struct mp_image *vf_alloc_out_image(struct vf_instance *vf)
     struct mp_image_params *p = &vf->fmt_out;
     assert(p->imgfmt);
     struct mp_image *img = mp_image_pool_get(vf->out_pool, p->imgfmt, p->w, p->h);
-    vf_fix_img_params(img, p);
+    if (img)
+        vf_fix_img_params(img, p);
     return img;
 }
 
-void vf_make_out_image_writeable(struct vf_instance *vf, struct mp_image *img)
+// Returns false on failure; then the image can't be written to.
+bool vf_make_out_image_writeable(struct vf_instance *vf, struct mp_image *img)
 {
     struct mp_image_params *p = &vf->fmt_out;
     assert(p->imgfmt);
     assert(p->imgfmt == img->imgfmt);
     assert(p->w == img->w && p->h == img->h);
-    mp_image_pool_make_writeable(vf->out_pool, img);
+    return mp_image_pool_make_writeable(vf->out_pool, img);
 }
 
 //============================================================================
@@ -221,22 +226,22 @@ static int vf_default_query_format(struct vf_instance *vf, unsigned int fmt)
     return vf_next_query_format(vf, fmt);
 }
 
-static void print_fmt(struct mp_log *log, int msglevel, struct mp_image_params *p)
+static void fmt_cat(char *b, size_t bs, struct mp_image_params *p)
 {
     if (p && p->imgfmt) {
-        mp_msg(log, msglevel, "%dx%d", p->w, p->h);
+        mp_snprintf_cat(b, bs, "%dx%d", p->w, p->h);
         if (p->w != p->d_w || p->h != p->d_h)
-            mp_msg(log, msglevel, "->%dx%d", p->d_w, p->d_h);
-        mp_msg(log, msglevel, " %s", mp_imgfmt_to_name(p->imgfmt));
-        mp_msg(log, msglevel, " %s/%s", mp_csp_names[p->colorspace],
-                   mp_csp_levels_names[p->colorlevels]);
-        mp_msg(log, msglevel, " CL=%d", (int)p->chroma_location);
+            mp_snprintf_cat(b, bs, "->%dx%d", p->d_w, p->d_h);
+        mp_snprintf_cat(b, bs, " %s", mp_imgfmt_to_name(p->imgfmt));
+        mp_snprintf_cat(b, bs, " %s/%s", mp_csp_names[p->colorspace],
+                        mp_csp_levels_names[p->colorlevels]);
+        mp_snprintf_cat(b, bs, " CL=%d", (int)p->chroma_location);
         if (p->outputlevels)
-            mp_msg(log, msglevel, " out=%s", mp_csp_levels_names[p->outputlevels]);
+            mp_snprintf_cat(b, bs, " out=%s", mp_csp_levels_names[p->outputlevels]);
         if (p->rotate)
-            mp_msg(log, msglevel, " rot=%d", p->rotate);
+            mp_snprintf_cat(b, bs, " rot=%d", p->rotate);
     } else {
-        mp_msg(log, msglevel, "???");
+        mp_snprintf_cat(b, bs, "???");
     }
 }
 
@@ -246,17 +251,20 @@ void vf_print_filter_chain(struct vf_chain *c, int msglevel,
     if (!mp_msg_test(c->log, msglevel))
         return;
 
-    mp_msg(c->log, msglevel, " [vd] ");
-    print_fmt(c->log, msglevel, &c->input_params);
-    mp_msg(c->log, msglevel, "\n");
+    char b[128] = {0};
+
+    fmt_cat(b, sizeof(b), &c->input_params);
+    mp_msg(c->log, msglevel, " [vd] %s\n", b);
+
     for (vf_instance_t *f = c->first; f; f = f->next) {
-        mp_msg(c->log, msglevel, " [%s] ", f->info->name);
-        print_fmt(c->log, msglevel, &f->fmt_out);
+        b[0] = '\0';
+        mp_snprintf_cat(b, sizeof(b), " [%s] ", f->info->name);
+        fmt_cat(b, sizeof(b), &f->fmt_out);
         if (f->autoinserted)
-            mp_msg(c->log, msglevel, " [a]");
+            mp_snprintf_cat(b, sizeof(b), " [a]");
         if (f == vf)
-            mp_msg(c->log, msglevel, "   <---");
-        mp_msg(c->log, msglevel, "\n");
+            mp_snprintf_cat(b, sizeof(b), "   <---");
+        mp_msg(c->log, msglevel, "%s\n", b);
     }
 }
 
@@ -385,7 +393,7 @@ static int vf_do_filter(struct vf_instance *vf, struct mp_image *img)
 {
     assert(vf->fmt_in.imgfmt);
     if (img)
-        assert(mp_image_params_equals(&img->params, &vf->fmt_in));
+        assert(mp_image_params_equal(&img->params, &vf->fmt_in));
 
     if (vf->filter_ext) {
         int r = vf->filter_ext(vf, img);
@@ -411,7 +419,7 @@ int vf_filter_frame(struct vf_chain *c, struct mp_image *img)
         talloc_free(img);
         return -1;
     }
-    assert(mp_image_params_equals(&img->params, &c->input_params));
+    assert(mp_image_params_equal(&img->params, &c->input_params));
     vf_fix_img_params(img, &c->override_params);
     return vf_do_filter(c->first, img);
 }
@@ -566,6 +574,9 @@ static int vf_reconfig_wrapper(struct vf_instance *vf,
 
     vf->fmt_out = vf->fmt_in = *p;
 
+    if (!mp_image_params_valid(&vf->fmt_in))
+        return -2;
+
     int r;
     if (vf->reconfig) {
         r = vf->reconfig(vf, &vf->fmt_in, &vf->fmt_out);
@@ -575,7 +586,10 @@ static int vf_reconfig_wrapper(struct vf_instance *vf,
         r = 0;
     }
 
-    if (!mp_image_params_equals(&vf->fmt_in, p))
+    if (!mp_image_params_equal(&vf->fmt_in, p))
+        r = -2;
+
+    if (!mp_image_params_valid(&vf->fmt_out))
         r = -2;
 
     // Fix csp in case of pixel format change

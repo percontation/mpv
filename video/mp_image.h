@@ -47,6 +47,7 @@ struct mp_image_params {
     int d_w, d_h;               // define display aspect ratio (never 0/0)
     enum mp_csp colorspace;
     enum mp_csp_levels colorlevels;
+    enum mp_csp_prim primaries;
     enum mp_chroma_location chroma_location;
     // The image should be converted to these levels. Unlike colorlevels, it
     // does not describe the current state of the image. (Somewhat similar to
@@ -114,7 +115,7 @@ void mp_image_copy_attributes(struct mp_image *dmpi, struct mp_image *mpi);
 struct mp_image *mp_image_new_copy(struct mp_image *img);
 struct mp_image *mp_image_new_ref(struct mp_image *img);
 bool mp_image_is_writeable(struct mp_image *img);
-void mp_image_make_writeable(struct mp_image *img);
+bool mp_image_make_writeable(struct mp_image *img);
 void mp_image_setrefp(struct mp_image **p_img, struct mp_image *new_value);
 void mp_image_unrefp(struct mp_image **p_img);
 
@@ -139,11 +140,9 @@ struct mp_image *mp_image_new_external_ref(struct mp_image *img, void *arg,
 
 void mp_image_params_guess_csp(struct mp_image_params *params);
 
-bool mp_image_params_equals(const struct mp_image_params *p1,
-                            const struct mp_image_params *p2);
-
-void mp_image_params_from_image(struct mp_image_params *params,
-                                const struct mp_image *image);
+bool mp_image_params_valid(const struct mp_image_params *p);
+bool mp_image_params_equal(const struct mp_image_params *p1,
+                           const struct mp_image_params *p2);
 
 void mp_image_set_params(struct mp_image *image,
                          const struct mp_image_params *params);

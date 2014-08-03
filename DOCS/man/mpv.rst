@@ -2,7 +2,7 @@ mpv
 ###
 
 ##############
-a movie player
+a media player
 ##############
 
 :Copyright: GPLv2+
@@ -15,23 +15,11 @@ SYNOPSIS
 | **mpv** [options] [file|URL|-]
 | **mpv** [options] --playlist=PLAYLIST
 | **mpv** [options] files
-| **mpv** bd://[title][/device] [options]
-| **mpv** bdnav://[title][/device] [options]
-| **mpv** dvd://[title|[start\_title]-end\_title][/device] [options]
-| **mpv** dvdnav://[longest|menu|title][/device] [options]
-| **mpv** \tv://[channel][/input_id] [options]
-| **mpv** \pvr:// [options]
-| **mpv** \dvb://[card\_number@]channel [options]
-| **mpv** \mf://[filemask|\@listfile] [-mf options] [options]
-| **mpv** cdda://track[-endtrack][:speed][/device] [options]
-| **mpv** [file|mms[t]|http|httpproxy|rt[s]p|ftp|udp|smb]://[user:pass\@]URL[:port] [options]
-| **mpv** edl://[edl specification as in edl-mpv.rst]
-
 
 DESCRIPTION
 ===========
 
-**mpv** is a movie player based on MPlayer and mplayer2. It supports a wide variety of video
+**mpv** is a media player based on MPlayer and mplayer2. It supports a wide variety of video
 file formats, audio and video codecs, and subtitle types. Special input URL
 types are available to read input from a variety of sources other than disk
 files. Depending on platform, a variety of different video and audio output
@@ -81,11 +69,11 @@ p / SPACE
     Pause (pressing again unpauses).
 
 \.
-    Step forward. Pressing once will pause movie, every consecutive press will
+    Step forward. Pressing once will pause, every consecutive press will
     play one frame and then go into pause mode again.
 
 ,
-    Step backward. Pressing once will pause movie, every consecutive press will
+    Step backward. Pressing once will pause, every consecutive press will
     play one frame in reverse and then go into pause mode again.
 
 q / ESC
@@ -202,21 +190,21 @@ corresponding adjustment, or the software equalizer (``--vf=eq``).)
 (The following keys are valid only on OSX.)
 
 command + 0
-    Resize movie window to half its original size.
+    Resize video window to half its original size.
     (On other platforms, you can bind keys to change the ``window-scale``
     property.)
 
 command + 1
-    Resize movie window to its original size.
+    Resize video window to its original size.
 
 command + 2
-    Resize movie window to double its original size.
+    Resize video window to double its original size.
 
 command + f
     Toggle fullscreen (see also ``--fs``).
 
 command + [ and command + ]
-    Set movie window alpha.
+    Set video window alpha.
 
 (The following keys are valid if you have a keyboard with multimedia keys.)
 
@@ -350,7 +338,7 @@ Location and Syntax
 You can put all of the options in configuration files which will be read every
 time mpv is run. The system-wide configuration file 'mpv.conf' is in your
 configuration directory (e.g. ``/etc/mpv`` or ``/usr/local/etc/mpv``), the
-user-specific one is ``~/.mpv/config``.
+user-specific one is ``~/.config/mpv/mpv.conf``.
 User-specific options override system-wide options and options given on the
 command line override either. The syntax of the configuration files is
 ``option=<value>``; everything after a *#* is considered a comment. Options
@@ -385,8 +373,8 @@ File-specific Configuration Files
 ---------------------------------
 
 You can also write file-specific configuration files. If you wish to have a
-configuration file for a file called 'movie.avi', create a file named
-'movie.avi.conf' with the file-specific options in it and put it in
+configuration file for a file called 'video.avi', create a file named
+'video.avi.conf' with the file-specific options in it and put it in
 ``~/.mpv/``. You can also put the configuration file in the same directory
 as the file to be played, as long as you give the ``--use-filedir-conf``
 option (either on the command line or in your global config file). If a
@@ -446,6 +434,85 @@ taking screenshots is handled by the VOs, and adding the screenshot filter will
 break hardware decoding. (The filter may still be useful for taking screenshots
 at a certain point within the video chain when using multiple video filters.)
 
+PROTOCOLS
+=========
+
+``http://...``, ``https://``, ...
+    Many network protocols are supported, but the protocol prefix must always
+    be specified. mpv will never attempt to guess whether a filename is
+    actually a network address. A protocol prefix is always required.
+
+``-``
+    Play data from stdin.
+
+``smb://PATH``
+    Play a path from  Samba share.
+
+``bd://[title][/device]`` ``--bluray-device=PATH``
+    Play a Blu-Ray disc. Currently, this does not accept iso files. Instead,
+    you must mount the iso file as filesystem, and point ``--bluray-device``
+    to the mounted directly.
+
+``bdnav://[title][/device]``
+    Play a Blu-Ray disc, with navigation features enabled. This feature is
+    permanently experimental.
+
+``dvd://[title|[starttitle]-endtitle][/device]`` ``--dvd-device=PATH``
+    Play a DVD. If you want dvdnav menus, use ``dvd://menu``. If no title
+    is given, the longest title is auto-selected.
+
+    ``dvdnav://`` is an old alias for ``dvd://`` and does exactly the same
+    thing.
+
+``dvdread://...:``
+    Play a DVD using the old libdvdread code. This is what MPlayer and older
+    mpv versions use for ``dvd://``. Use is discouraged. It's provided only
+    for compatibility and for transition.
+
+``tv://[channel][/input_id]`` ``--tv-...``
+    Analogue TV via V4L. Also useful for webcams. (Linux only.)
+
+``pvr://`` ``--pvr-...``
+    PVR. (Linux only.)
+
+``dvb://[cardnumber@]channel`` ``--dvbin-...``
+    Digital TV via DVB. (Linux only.)
+
+``mf://[filemask|@listfile]`` ``--mf-...``
+    Play a series of images as video.
+
+``cdda://track[-endtrack][:speed][/device]`` ``--cdrom-device=PATH`` ``--cdda-...``
+    Play CD.
+
+``lavf://...``
+    Access any FFmpeg/Libav libavformat protocol. Basically, this passed the
+    string after the ``//`` directly to libavformat.
+
+``av://type:options``
+    This is intended for using libavdevice inputs. ``type`` is the libavdevice
+    demuxer name, and ``options`` is the (pseudo-)filename passed to the
+    demuxer.
+
+    For example, ``mpv av://lavfi:mandelbrot`` makes use of the libavfilter
+    wrapper included in libavdevice, and will use the ``mandelbrot`` source
+    filter to generate input data.
+
+    ``avdevice://`` is an alias.
+
+``file://PATH``
+    A local path as URL. Might be useful in some special use-cases. Note that
+    ``PATH`` itself should start with a third ``/`` to make the path an
+    absolute path.
+
+``edl://[edl specification as in edl-mpv.rst]``
+    Stitch together parts of multiple files and play them.
+
+``null://``
+    Simulate an empty file.
+
+``memory://data``
+    Use the ``data`` part as source data.
+
 .. include:: options.rst
 
 .. include:: ao.rst
@@ -472,15 +539,23 @@ ENVIRONMENT VARIABLES
 There are a number of environment variables that can be used to control the
 behavior of mpv.
 
-``HOME``
-    Used to determine mpv config directory: ``$HOME/.mpv``
+``HOME``, ``XDG_CONFIG_HOME``
+    Used to determine mpv config directory. If ``XDG_CONFIG_HOME`` is not set,
+    ``$HOME/.config/mpv`` is used.
+
+    ``$HOME/.mpv`` is always added to the list of config search paths with a
+    lower priority.
+
+``XDG_CONFIG_DIRS``
+    If set, XDG-style system configuration directories are used. Otherwise,
+    the UNIX convention (``PREFIX/etc/mpv/``) is used.
 
 ``TERM``
     Used to determine terminal type.
 
 ``MPV_HOME``
     Directory where mpv looks for user settings. Overrides ``HOME``, and mpv
-    will try to load the config file as ``$MPV_HOME/config``.
+    will try to load the config file as ``$MPV_HOME/mpv.conf``.
 
 ``MPV_VERBOSE`` (see also ``-v`` and ``--msg-level``)
     Set the initial verbosity level across all message modules (default: 0).
@@ -593,18 +668,23 @@ FILES
 ``/usr/local/etc/mpv/mpv.conf``
     mpv system-wide settings (depends on ``--prefix`` passed to configure)
 
-``~/.mpv/config``
+``~/.config/mpv/mpv.conf``
     mpv user settings
 
-``~/.mpv/input.conf``
-    input bindings (see ``--input-keylist`` for the full list)
+``~/.config/mpv/input.conf``
+    key bindings (see `INPUT.CONF`_ section)
 
-``~/.mpv/lua/``
+``~/.config/mpv/lua/``
     All files in this directly are loaded as if they were passed to the
     ``--lua`` option. They are loaded in alphabetical order, and sub-directories
     and files with no ``.lua`` extension are ignored. The ``--load-scripts=no``
     option disables loading these files.
 
+Note that the environment variables ``$XDG_CONFIG_HOME`` and ``$MPV_HOME`` can
+override the standard directory ``~/.config/mpv/``.
+
+Also, the old config location at ``~/.mpv/`` is still read, and if the XDG
+variant does not exist, will still be preferred.
 
 EXAMPLES OF MPV USAGE
 =====================

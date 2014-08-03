@@ -37,10 +37,6 @@
 #include "compat/mpbswap.h"
 #include "common/msg.h"
 
-#ifndef SIZE_MAX
-#define SIZE_MAX ((size_t)-1)
-#endif
-
 // Whether the id is a known Matroska level 1 element (allowed as element on
 // global file level, after the level 0 MATROSKA_ID_SEGMENT).
 // This (intentionally) doesn't include "global" elements.
@@ -364,7 +360,7 @@ static void ebml_parse_element(struct ebml_parse_ctx *ctx, void *target,
     char *s = target;
     uint8_t *end = data + size;
     uint8_t *p = data;
-    int num_elems[MAX_EBML_SUBELEMENTS] = {};
+    int num_elems[MAX_EBML_SUBELEMENTS] = {0};
     while (p < end) {
         uint8_t *startp = p;
         int len;
@@ -390,6 +386,10 @@ static void ebml_parse_element(struct ebml_parse_ctx *ctx, void *target,
             if (type->fields[i].id == id) {
                 field_idx = i;
                 num_elems[i]++;
+                if (num_elems[i] >= 0x70000000) {
+                    MP_ERR(ctx, "Too many EBML subelements.\n");
+                    goto other_error;
+                }
                 break;
             }
 
@@ -409,8 +409,7 @@ static void ebml_parse_element(struct ebml_parse_ctx *ctx, void *target,
         continue;
 
     past_end_error:
-        MP_DBG(ctx, "Subelement headers go "
-               "past end of containing element\n");
+        MP_DBG(ctx, "Subelement headers go past end of containing element\n");
     other_error:
         ctx->has_errors = true;
         end = startp;
@@ -532,8 +531,7 @@ static void ebml_parse_element(struct ebml_parse_ctx *ctx, void *target,
                 subelptr = (fieldtype *) fieldptr
             GETPTR(uintptr, uint64_t);
             if (length < 1 || length > 8) {
-                MP_DBG(ctx, "uint invalid length %"PRIu64
-                       "\n", length);
+                MP_DBG(ctx, "uint invalid length %"PRIu64"\n", length);
                 goto error;
             }
             *uintptr = ebml_parse_uint(data, length);
@@ -544,8 +542,7 @@ static void ebml_parse_element(struct ebml_parse_ctx *ctx, void *target,
             int64_t *sintptr;
             GETPTR(sintptr, int64_t);
             if (length < 1 || length > 8) {
-                MP_DBG(ctx, "sint invalid length %"PRIu64
-                       "\n", length);
+                MP_DBG(ctx, "sint invalid length %"PRIu64"\n", length);
                 goto error;
             }
             *sintptr = ebml_parse_sint(data, length);
@@ -556,8 +553,7 @@ static void ebml_parse_element(struct ebml_parse_ctx *ctx, void *target,
             double *floatptr;
             GETPTR(floatptr, double);
             if (length != 4 && length != 8) {
-                MP_DBG(ctx, "float invalid length %"PRIu64
-                       "\n", length);
+                MP_DBG(ctx, "float invalid length %"PRIu64"\n", length);
                 goto error;
             }
             *floatptr = ebml_parse_float(data, length);
@@ -566,16 +562,18 @@ static void ebml_parse_element(struct ebml_parse_ctx *ctx, void *target,
 
         case EBML_TYPE_STR:
         case EBML_TYPE_BINARY:;
+            if (length > 0x80000000) {
+                MP_ERR(ctx, "Not reading overly long EBML element.\n");
+                break;
+            }
             struct bstr *strptr;
             GETPTR(strptr, struct bstr);
             strptr->start = data;
             strptr->len = length;
             if (ed->type == EBML_TYPE_STR)
-                MP_DBG(ctx, "string \"%.*s\"\n",
-                       BSTR_P(*strptr));
+                MP_DBG(ctx, "string \"%.*s\"\n", BSTR_P(*strptr));
             else
-                MP_DBG(ctx, "binary %zd bytes\n",
-                       strptr->len);
+                MP_DBG(ctx, "binary %zd bytes\n", strptr->len);
             break;
 
         case EBML_TYPE_EBML_ID:;

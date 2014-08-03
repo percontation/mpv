@@ -90,7 +90,7 @@ static int init(struct ao *ao)
     struct mp_chmap_sel sel = {0};
     mp_chmap_sel_add_any(&sel);
     if (!ao_chmap_sel_adjust(ao, &sel, &ao->channels))
-        return -1;
+        mp_chmap_from_channels(&ao->channels, 2);
 
     priv->latency = priv->latency_sec * ao->samplerate;
 
@@ -210,7 +210,6 @@ const struct ao_driver audio_out_null = {
     .priv_size = sizeof(struct priv),
     .priv_defaults = &(const struct priv) {
         .bufferlen = 0.2,
-        .latency_sec = 0.5,
         .outburst = 256,
         .speed = 1,
     },

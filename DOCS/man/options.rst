@@ -74,8 +74,9 @@ OPTIONS
     should not need these for typical use.
 
 ``--aid=<ID|auto|no>``
-    Select audio channel. ``auto`` selects the default, ``no`` disables audio.
-    See also ``--alang``.
+    Select audio track. ``auto`` selects the default, ``no`` disables audio.
+    See also ``--alang``. mpv normally prints available audio tracks on the
+    terminal when starting playback of a file.
 
 ``--alang=<languagecode[,languagecode,...]>``
     Specify a priority list of audio languages to use. Different container
@@ -274,8 +275,9 @@ OPTIONS
     This option has no influence on files with normal video tracks.
 
 ``--audio-file=<filename>``
-    Play audio from an external file (WAV, MP3 or Ogg Vorbis) while viewing a
-    movie.
+    Play audio from an external file while viewing a video. Each use of this
+    option will add a new audio track. The details are similar to how
+    ``--sub-file`` works.
 
 ``--audio-format=<format>``
     Select the sample format used for output from the audio filter layer to
@@ -342,7 +344,7 @@ OPTIONS
     Specifying ``--autosync=0``, the default, will cause frame timing to be
     based entirely on audio delay measurements. Specifying ``--autosync=1``
     will do the same, but will subtly change the A/V correction algorithm. An
-    uneven video framerate in a movie which plays fine with ``--no-audio`` can
+    uneven video framerate in a video which plays fine with ``--no-audio`` can
     often be helped by setting this to an integer value greater than 1. The
     higher the value, the closer the timing will be to ``--no-audio``. Try
     ``--autosync=30`` to smooth out problems with sound drivers which do not
@@ -369,7 +371,7 @@ OPTIONS
         ``mpv bd:// --bluray-device=/path/to/bd/``
 
 ``--border``, ``--no-border``
-    Play movie with window border and decorations. Since this is on by
+    Play video with window border and decorations. Since this is on by
     default, use ``--no-border`` to disable the standard window decorations.
 
 ``--brightness=<-100-100>``
@@ -400,7 +402,7 @@ OPTIONS
 ``--cache-pause-below=<kBytes|no>``
     If the cache size goes below the specified value (in KB), pause and wait
     until the size set by ``--cache-pause-restart`` is reached, then  resume
-    playback (default: 500). If ``no`` is specified, this behavior is disabled.
+    playback (default: 50). If ``no`` is specified, this behavior is disabled.
 
     When the player is paused this way, the status line shows ``Buffering``
     instead of ``Paused``, and the OSD uses a clock symbol instead of the
@@ -409,7 +411,7 @@ OPTIONS
 ``--cache-pause-restart=<kBytes>``
     If the cache is paused due to the ``--cache-pause-below`` functionality,
     then the player unpauses as soon as the cache has this much data (in KB).
-    (Default: 1000)
+    (Default: 100)
 
 ``--cache-initial=<kBytes>``
     Playback will start when the cache has been filled up with this many
@@ -426,6 +428,31 @@ OPTIONS
     position and seek destination, or performing an actual seek. Depending
     on the situation, either of these might be slower than the other method.
     This option allows control over this.
+
+``--cache-file=<path>``
+    Create a cache file on the filesystem with the given name. The file is
+    always overwritten. When the general cache is enabled, this file cache
+    will be used to store whatever is read from the source stream.
+
+    This will always overwrite the cache file, and you can't use an existing
+    cache file to resume playback of a stream. (Technically, mpv wouldn't
+    even know which blocks in the file are valid and which not.)
+
+    The resulting file will not necessarily contain all data of the source
+    stream. For example, if you seek, the parts that were skipped over are
+    never read and consequently are not written to the cache. The skipped over
+    parts are filled with zeros. This means that the cache file doesn't
+    necessarily correspond to a full download of the source stream.
+
+    Both of these issues could be improved if there is any user interest.
+
+    Also see ``--cache-file-size``.
+
+``--cache-file-size=<kBytes>``
+    Maximum size of the file created with ``--cache-file``. For read accesses
+    above this size, the cache is simply not used.
+
+    (Default: 1048576, 1 GB.)
 
 ``--cdda-...``
     These options can be used to tune the CD Audio reading feature of mpv.
@@ -511,6 +538,8 @@ OPTIONS
     :auto:          automatic selection (default)
     :BT.601:        ITU-R BT.601 (SD)
     :BT.709:        ITU-R BT.709 (HD)
+    :BT.2020-NCL:   ITU-R BT.2020 non-constant luminance system
+    :BT.2020-CL:    ITU-R BT.2020 constant luminance system
     :SMPTE-240M:    SMPTE-240M
 
 ``--colormatrix-input-range=<color-range>``
@@ -546,6 +575,33 @@ OPTIONS
 
         It is advisable to use your graphics driver's color range option
         instead, if available.
+
+``--colormatrix-primaries=<primaries>``
+    RGB primaries the source file was encoded with. Normally this should be set
+    in the file header, but when playing broken or mistagged files this can be
+    used to override the setting. By default, when unset, BT.709 is used for
+    all files except those tagged with a BT.2020 color matrix.
+
+    This option only affects video output drivers that perform color
+    management, for example ``opengl`` with the ``srgb`` or ``icc-profile``
+    suboptions set.
+
+    If this option is set to ``auto`` (which is the default), the video's
+    primaries flag will be used. If that flag is unset, the color space will
+    be selected automatically, using the following heuristics: If the
+    ``--colormatrix`` is set or determined as BT.2020 or BT.709, the
+    corresponding primaries are used. Otherwise, if the video height is
+    exactly 576 (PAL), BT.601-625 is used. If it's exactly 480 or 486 (NTSC),
+    BT.601-525 is used. If the video resolution is anything else, BT.709 is
+    used.
+
+    Available primaries are:
+
+    :auto:         automatic selection (default)
+    :BT.601-525:   ITU-R BT.601 (SD) 525-line systems (NTSC, SMPTE-C)
+    :BT.601-625:   ITU-R BT.601 (SD) 625-line systems (PAL, SECAM)
+    :BT.709:       ITU-R BT.709 (HD) (same primaries as sRGB)
+    :BT.2020:      ITU-R BT.2020 (UHD)
 
 ``--config-dir=<path>``
     Force a different configuration directory. If this is set, the given
@@ -722,6 +778,24 @@ OPTIONS
 
 ``--demuxer-rawvideo-size=<value>``
     Frame size in bytes when using ``--demuxer=rawvideo``.
+
+``--demuxer-thread=<yes|no>``
+    Run the demuxer in a separate thread, and let it prefetch a certain amount
+    of packets (default: no).
+
+``--demuxer-readahead-packets=N``
+    If ``--demuxer-thread`` is enabled, this controls how much the demuxer
+    should buffer ahead. If the number of packets in the packet queue exceeds
+    ``--demuxer-readahead-packets``, or the total number of bytes exceeds
+    ``--demuxer-readahead-bytes``, the thread stops reading ahead.
+
+    Note that if you set these options near the maximum, you might get a
+    packet queue overflow warning.
+
+    See ``--list-options`` for defaults and value range.
+
+``--demuxer-readahead-bytes=N``
+    See ``--demuxer-readahead-packets``.
 
 ``--dump-stats=<filename>``
     Write certain statistics to the given file. The file is truncated on
@@ -1117,8 +1191,7 @@ OPTIONS
 
 ``--idle``
     Makes mpv wait idly instead of quitting when there is no file to play.
-    Mostly useful in slave mode, where mpv can be controlled through input
-    commands (see also ``--slave-broken``).
+    Useful with ``--force-window``, or for client API.
 
 ``--index=<mode>``
     Controls how to seek in files. Note that if the index is missing from a
@@ -1147,7 +1220,7 @@ OPTIONS
 
 ``--input-conf=<filename>``
     Specify input configuration file other than the default
-    ``~/.mpv/input.conf``.
+    ``~/.config/mpv/input.conf``.
 
 ``--no-input-default-bindings``
     Disable mpv default (builtin) key bindings.
@@ -1178,7 +1251,6 @@ OPTIONS
 
 ``--input-file=<filename>``
     Read commands from the given file. Mostly useful with a FIFO.
-    See also ``--slave-broken``.
 
     .. note::
 
@@ -1258,6 +1330,9 @@ OPTIONS
 ``--list-properties``
     Print a list of the available properties.
 
+``--list-protocols``
+    Print a list of the supported protocols.
+
 ``--load-scripts=<yes|no>``
     If set to ``no``, don't auto-load scripts from ``~/.mpv/lua/``.
     (Default: ``yes``)
@@ -1311,13 +1386,13 @@ OPTIONS
     example files or playlists loaded with the ``loadfile`` or ``loadlist``
     commands.
 
-``--mf=<option1:option2:...>``
-    Used when decoding from multiple PNG or JPEG files with ``mf://``.
+``--mf-fps=<value>``
+    Framerate used when decoding from multiple PNG or JPEG files with ``mf://``
+    (default: 1).
 
-    Available options are:
-
-    :fps=<value>:  output fps (default: 1)
-    :type=<value>: input file type (available: jpeg, png, tga, sgi)
+``--mf-type=<value>``
+    Input file type for ``mf://`` (available: jpeg, png, tga, sgi). By default,
+    this is guessed from the file extension.
 
 ``--monitoraspect=<ratio>``
     Set the aspect ratio of your monitor or TV screen. A value of 0 disables a
@@ -1390,9 +1465,9 @@ OPTIONS
 
 ``--no-config``
     Do not load default configuration files. This prevents loading of
-    ``~/.mpv/config`` and ``~/.mpv/input.conf``, as well as loading the
-    same files from system wide configuration directories. Other configuration
-    files are blocked as well, such as resume playback files.
+    ``~/.config/mpv/mpv.conf`` and ``~/.config/mpv/input.conf``, as well as
+    loading the same files from system wide configuration directories. Other
+    configuration files are blocked as well, such as resume playback files.
 
     .. note::
 
@@ -1609,7 +1684,7 @@ OPTIONS
 
 ``--panscan=<0.0-1.0>``
     Enables pan-and-scan functionality (cropping the sides of e.g. a 16:9
-    movie to make it fit a 4:3 display without black bands). The range
+    video to make it fit a 4:3 display without black bands). The range
     controls how much of the image is cropped. May not work with all video
     output drivers.
 
@@ -1628,6 +1703,13 @@ OPTIONS
 ``--stream-dump=<filename>``
     Same as ``--stream-capture``, but do not start playback. Instead, the entire
     file is dumped.
+
+``--stream-lavf-o=opt1=value1,opt2=value2,...``
+    Set AVOptions on streams opened with libavformat. Unknown or misspelled
+    options are silently ignored. (They are mentioned in the terminal output
+    in verbose mode, i.e. ``--v``. In general we can't print errors, because
+    other options such as e.g. user agent are not available with all protocols,
+    and printing errors for unknown options would end up being too noisy.)
 
 ``--playlist=<filename>``
     Play files according to a playlist file (Supports some common formats.If
@@ -1685,7 +1767,7 @@ OPTIONS
     based cards are known as PVR capture cards. Be aware that only Linux
     2.6.18 kernel and above is able to handle MPEG stream through V4L2 layer.
     For hardware capture of an MPEG stream and watching it with mpv, use
-    ``pvr://`` as a movie URL.
+    ``pvr://`` as media URL.
 
 
 ``--pvr-aspect=<0-3>``
@@ -1843,7 +1925,7 @@ OPTIONS
 ``--screen=<default|0-32>``
     In multi-monitor configurations (i.e. a single desktop that spans across
     multiple displays), this option tells mpv which screen to display the
-    movie on.
+    video on.
 
     .. admonition:: Note (X11)
 
@@ -2018,24 +2100,6 @@ OPTIONS
         - ``mpv --slang=jpn example.mkv`` plays a Matroska file with Japanese
           subtitles.
 
-``--slave-broken``
-    Switches on the old slave mode. This is for testing only, and incompatible
-    to the removed ``--slave`` switch.
-
-    .. attention::
-        Changes incompatible to slave mode applications have been made. In
-        particular, the status line output was changed, which is used by some
-        applications to determine the current playback position. This switch
-        has been renamed to prevent these applications from working with this
-        version of mpv, because it would lead to buggy and confusing behavior
-        only. Moreover, the slave mode protocol is so horribly bad that it
-        should not be used for new programs, nor should existing programs
-        attempt to adapt to the changed output and use the ``--slave-broken``
-        switch. Instead, a new, saner protocol should be developed (and will be,
-        if there is enough interest).
-
-        This affects most third-party GUI frontends.
-
 ``--softsleep``
     Time frames by repeatedly checking the current time instead of asking
     the kernel to wake up mpv at the correct time. Useful if your kernel
@@ -2078,7 +2142,8 @@ OPTIONS
     Seek to given time position.
 
     The general format for absolute times is ``[[hh:]mm:]ss[.ms]``. If the time
-    is negated with ``-``, the seek is relative from the end of the file.
+    is given with a prefix of ``+`` or ``-``, the seek is relative from the start
+    or end of the file.
 
     ``pp%`` seeks to percent position pp (0-100).
 
@@ -2086,8 +2151,10 @@ OPTIONS
 
     .. admonition:: Examples
 
-        ``--start=56``
-            Seeks to 56 seconds.
+        ``--start=+56``, ``--start=+00:56``
+            Seeks to the start time + 56 seconds.
+        ``--start=-56``, ``--start=-00:56``
+            Seeks to the end time - 56 seconds.
         ``--start=01:10:00``
             Seeks to 1 hour 10 min.
         ``--start=50%``
@@ -2148,7 +2215,7 @@ OPTIONS
 
     :no:    Don't automatically load external subtitle files.
     :exact: Load the media filename with subtitle file extension (default).
-    :fuzzy: Load all subs containing movie name.
+    :fuzzy: Load all subs containing media filename.
     :all:   Load all subs in the current and ``--sub-paths`` directories.
 
 ``--sub-paths=<path1:path2:...>``
@@ -2159,13 +2226,13 @@ OPTIONS
 
     .. admonition:: Example
 
-        Assuming that ``/path/to/movie/movie.avi`` is played and
+        Assuming that ``/path/to/video/video.avi`` is played and
         ``--sub-paths=sub:subtitles:/tmp/subs`` is specified, mpv searches for
         subtitle files in these directories:
 
-        - ``/path/to/movie/``
-        - ``/path/to/movie/sub/``
-        - ``/path/to/movie/subtitles/``
+        - ``/path/to/video/``
+        - ``/path/to/video/sub/``
+        - ``/path/to/video/subtitles/``
         - ``/tmp/subs/``
         - ``~/.mpv/sub/``
 
@@ -2179,6 +2246,9 @@ OPTIONS
     If mpv is not compiled with ENCA, ``UTF-8:UTF-8-BROKEN`` is the default,
     which means it will try to use UTF-8, otherwise the ``UTF-8-BROKEN``
     pseudo codepage (see below).
+
+    The default value for this option is ``auto``, whose actual effect depends
+    on whether ENCA is compiled.
 
     .. admonition:: Warning
 
@@ -2235,11 +2305,11 @@ OPTIONS
     Delays subtitles by ``<sec>`` seconds. Can be negative.
 
 ``--sub-fps=<rate>``
-    Specify the framerate of the subtitle file (default: movie fps).
+    Specify the framerate of the subtitle file (default: video fps).
 
     .. note::
 
-        ``<rate>`` > movie fps speeds the subtitles up for frame-based
+        ``<rate>`` > video fps speeds the subtitles up for frame-based
         subtitle files and slows them down for time-based ones.
 
     Also see ``--sub-speed`` option.
@@ -2376,14 +2446,14 @@ OPTIONS
 
 ``--tls-verify``
     Verify peer certificates when using TLS (e.g. with ``https://...``).
-     (Silently fails with older ffmpeg or libav versions.)
+    (Silently fails with older ffmpeg or libav versions.)
 
 ``--tv-...``
     These options tune various properties of the TV capture module. For
     watching TV with mpv, use ``tv://`` or ``tv://<channel_number>`` or
     even ``tv://<channel_name>`` (see option ``tv-channels`` for ``channel_name``
-    below) as a movie URL. You can also use ``tv:///<input_id>`` to start
-    watching a movie from a composite or S-Video input (see option ``input`` for
+    below) as a media URL. You can also use ``tv:///<input_id>`` to start
+    watching a video from a composite or S-Video input (see option ``input`` for
     details).
 
 ``--no-tv-audio``
@@ -2672,7 +2742,7 @@ OPTIONS
     This option is disabled if the ``--no-keepaspect`` option is used.
 
 ``--video-aspect=<ratio>``
-    Override movie aspect ratio, in case aspect information is incorrect or
+    Override video aspect ratio, in case aspect information is incorrect or
     missing in the file being played. See also ``--no-video-aspect``.
 
     Two values have special meaning:
@@ -2769,8 +2839,6 @@ OPTIONS
     this option, a new window will be created and the given window will be set
     as parent. The window will always be resized to cover the parent window
     fully, and will add black bars to compensate for the video aspect ratio.
-
-    See also ``--slave-broken``.
 
 ``--no-window-dragging``
     Don't move the window when clicking on it and moving the mouse pointer.

@@ -28,12 +28,12 @@
 #include <string.h>
 #include <math.h>
 #include <stdbool.h>
-#include <ctype.h>
 #include <assert.h>
 
 #include "config.h"
 #include "talloc.h"
 #include "common/msg.h"
+#include "misc/ctype.h"
 #include "options/m_option.h"
 #include "vo.h"
 #include "video/vfcap.h"
@@ -538,7 +538,7 @@ static void replace_var_str(char **text, const char *name, const char *replace)
         nextvar += namelen;
         // try not to replace prefixes of other vars (e.g. $foo vs. $foo_bar)
         char term = nextvar[0];
-        if (isalnum(term) || term == '_')
+        if (mp_isalnum(term) || term == '_')
             continue;
         int prelength = until - *text;
         int postlength = nextvar - *text;
@@ -2003,6 +2003,8 @@ static void draw_image(struct vo *vo, mp_image_t *mpi)
     }
 
     do_render(vo);
+
+    talloc_free(mpi);
 }
 
 static mp_image_t *get_screenshot(struct vo *vo)
@@ -2015,6 +2017,8 @@ static mp_image_t *get_screenshot(struct vo *vo)
 
     mp_image_t *image = mp_image_alloc(p->image_format, p->texture_width,
                                                         p->texture_height);
+    if (!image)
+        return NULL;
 
     glDownloadTex(gl, p->target, p->gl_format, p->gl_type, image->planes[0],
                   image->stride[0]);

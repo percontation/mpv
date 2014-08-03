@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <strings.h>
 #include <assert.h>
 #include <stdbool.h>
 
@@ -920,7 +921,6 @@ static const char *const replaced_opts =
     "|font#--osd-font"
     "|forcedsubsonly#--sub-forced-only"
     "|format#--audio-format"
-    "|fstype#--x11-fstype"
     "|hardframedrop#--framedrop=hard"
     "|identify#removed; use TOOLS/mpv_identify.sh"
     "|lavdopts#--vd-lavc-..."
@@ -969,6 +969,7 @@ static const char *const replaced_opts =
     "|lirc#--input-lirc"
     "|right-alt-gr#--input-right-alt-gr"
     "|autosub#--sub-auto"
+    "|autosub-match#--sub-auto"
     "|native-fs#--fs-missioncontrol"
     "|status-msg#--term-status-msg"
     "|idx#--index"

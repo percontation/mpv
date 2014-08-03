@@ -31,13 +31,13 @@
 
 #include "options/options.h"
 #include "options/m_config.h"
-#include "osdep/timer.h"
 #include "common/msg.h"
 #include "common/common.h"
 #include "common/global.h"
 
 extern const struct ao_driver audio_out_oss;
 extern const struct ao_driver audio_out_coreaudio;
+extern const struct ao_driver audio_out_coreaudio_exclusive;
 extern const struct ao_driver audio_out_rsound;
 extern const struct ao_driver audio_out_sndio;
 extern const struct ao_driver audio_out_pulse;
@@ -93,6 +93,9 @@ static const struct ao_driver * const audio_out_drivers[] = {
     &audio_out_pcm,
 #if HAVE_ENCODING
     &audio_out_lavc,
+#endif
+#if HAVE_COREAUDIO
+    &audio_out_coreaudio_exclusive,
 #endif
 #if HAVE_RSOUND
     &audio_out_rsound,
@@ -309,22 +312,11 @@ void ao_resume(struct ao *ao)
         ao->api->resume(ao);
 }
 
-// Be careful with locking
-void ao_wait_drain(struct ao *ao)
-{
-    // This is probably not entirely accurate, but good enough.
-    mp_sleep_us(ao_get_delay(ao) * 1000000);
-    ao_reset(ao);
-}
-
 // Block until the current audio buffer has played completely.
 void ao_drain(struct ao *ao)
 {
-    if (ao->api->drain) {
+    if (ao->api->drain)
         ao->api->drain(ao);
-    } else {
-        ao_wait_drain(ao);
-    }
 }
 
 bool ao_eof_reached(struct ao *ao)

@@ -24,7 +24,6 @@
 #include <sys/types.h>
 
 #include <libswscale/swscale.h>
-#include <libavutil/common.h>
 
 #include "config.h"
 #include "vo.h"
@@ -53,10 +52,9 @@
 #include "video/fmt-conversion.h"
 
 #include "common/msg.h"
+#include "input/input.h"
 #include "options/options.h"
 #include "osdep/timer.h"
-
-extern int sws_flags;
 
 struct priv {
     struct vo *vo;
@@ -335,10 +333,12 @@ static bool resize(struct vo *vo)
     // between window and video rectangle (i.e. not into panscan borders).
     p->osd.w = p->dst_w;
     p->osd.h = p->dst_h;
-    p->osd.mt = FFMIN(0, p->osd.mt);
-    p->osd.mb = FFMIN(0, p->osd.mb);
-    p->osd.mr = FFMIN(0, p->osd.mr);
-    p->osd.ml = FFMIN(0, p->osd.ml);
+    p->osd.mt = MPMIN(0, p->osd.mt);
+    p->osd.mb = MPMIN(0, p->osd.mb);
+    p->osd.mr = MPMIN(0, p->osd.mr);
+    p->osd.ml = MPMIN(0, p->osd.ml);
+
+    mp_input_set_mouse_transform(vo->input_ctx, &p->dst, NULL);
 
     p->image_width = (p->dst_w + 7) & (~7);
     p->image_height = p->dst_h;
@@ -460,7 +460,7 @@ static void flip_page(struct vo *vo)
         XSync(vo->x11->display, False);
 }
 
-// Note: redraw_frame() can call this with NULL.
+// Note: REDRAW_FRAME can call this with NULL.
 static void draw_image(struct vo *vo, mp_image_t *mpi)
 {
     struct priv *p = vo->priv;
@@ -483,15 +483,10 @@ static void draw_image(struct vo *vo, mp_image_t *mpi)
 
     osd_draw_on_image(vo->osd, p->osd, mpi ? mpi->pts : 0, 0, &img);
 
-    mp_image_setrefp(&p->original_image, mpi);
-}
-
-static int redraw_frame(struct vo *vo)
-{
-    struct priv *p = vo->priv;
-
-    draw_image(vo, p->original_image);
-    return true;
+    if (mpi != p->original_image) {
+        talloc_free(p->original_image);
+        p->original_image = mpi;
+    }
 }
 
 static int query_format(struct vo *vo, uint32_t format)
@@ -625,16 +620,8 @@ static int control(struct vo *vo, uint32_t request, void *data)
         resize(vo);
         return VO_TRUE;
     case VOCTRL_REDRAW_FRAME:
-        redraw_frame(vo);
+        draw_image(vo, p->original_image);
         return true;
-    case VOCTRL_WINDOW_TO_OSD_COORDS: {
-        // OSD is rendered into the scaled image
-        float *c = data;
-        struct mp_rect *dst = &p->dst;
-        c[0] = av_clipf(c[0], dst->x0, dst->x1) - dst->x0;
-        c[1] = av_clipf(c[1], dst->y0, dst->y1) - dst->y0;
-        return VO_TRUE;
-    }
     case VOCTRL_SCREENSHOT: {
         struct voctrl_screenshot_args *args = data;
         args->out_image = get_screenshot(vo);

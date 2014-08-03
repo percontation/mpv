@@ -34,7 +34,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <poll.h>
@@ -45,6 +44,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #include <libavutil/avstring.h>
 
 #include "osdep/io.h"
+#include "misc/ctype.h"
 
 #include "stream.h"
 #include "options/m_config.h"
@@ -177,7 +177,7 @@ static dvb_channels_list *dvb_get_channels(struct mp_log *log, char *filename, i
                 {
                         fields = sscanf(&line[k], sat_conf,
                                 &ptr->freq, &ptr->pol, &ptr->diseqc, &ptr->srate, vpid_str, apid_str);
-                        ptr->pol = toupper(ptr->pol);
+                        ptr->pol = mp_toupper(ptr->pol);
                         ptr->freq *=  1000UL;
                         ptr->srate *=  1000UL;
                         ptr->tone = -1;
@@ -750,29 +750,24 @@ dvb_config_t *dvb_get_config(stream_t *stream)
                 }
 
         void *talloc_ctx = talloc_new(NULL);
-        conf_file = mp_find_user_config_file(talloc_ctx, global, "channels.conf");
+        conf_file = mp_find_config_file(talloc_ctx, global, "channels.conf");
         switch(type) {
             case TUNER_TER:
-                conf_file = mp_find_user_config_file(talloc_ctx, global, "channels.conf.ter");
+                conf_file = mp_find_config_file(talloc_ctx, global, "channels.conf.ter");
                 break;
             case TUNER_CBL:
-                conf_file = mp_find_user_config_file(talloc_ctx, global, "channels.conf.cbl");
+                conf_file = mp_find_config_file(talloc_ctx, global, "channels.conf.cbl");
                 break;
             case TUNER_SAT:
-                conf_file = mp_find_user_config_file(talloc_ctx, global, "channels.conf.sat");
+                conf_file = mp_find_config_file(talloc_ctx, global, "channels.conf.sat");
                 break;
             case TUNER_ATSC:
-                conf_file = mp_find_user_config_file(talloc_ctx, global, "channels.conf.atsc");
+                conf_file = mp_find_config_file(talloc_ctx, global, "channels.conf.atsc");
                 break;
         }
 
-        if(conf_file && (access(conf_file, F_OK | R_OK) != 0)) {
-            conf_file = mp_find_user_config_file(talloc_ctx, global, "channels.conf");
-
-            if(conf_file && (access(conf_file, F_OK | R_OK) != 0)) {
-                conf_file = mp_find_global_config_file(talloc_ctx, global, "channels.conf");
-            }
-        }
+        if(conf_file && (access(conf_file, F_OK | R_OK) != 0))
+            conf_file = mp_find_config_file(talloc_ctx, global, "channels.conf");
 
         list = dvb_get_channels(log, conf_file, type);
         talloc_free(talloc_ctx);

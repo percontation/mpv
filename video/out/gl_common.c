@@ -36,12 +36,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <ctype.h>
 #include <stdbool.h>
 #include <math.h>
 #include <assert.h>
 #include "talloc.h"
 #include "gl_common.h"
+#include "common/common.h"
 #include "options/options.h"
 #include "options/m_option.h"
 
@@ -121,11 +121,12 @@ static const struct feature features[] = {
 
 static void list_features(int set, struct mp_log *log, int msgl, bool invert)
 {
+    char b[128] = {0};
     for (const struct feature *f = &features[0]; f->id; f++) {
         if (invert == !(f->id & set))
-            mp_msg(log, msgl, " [%s]", f->name);
+            mp_snprintf_cat(b, sizeof(b), " [%s]", f->name);
     }
-    mp_msg(log, msgl, "\n");
+    mp_msg(log, msgl, "%s\n", b);
 }
 
 // This guesses if the current GL context is a suspected software renderer.
@@ -833,6 +834,8 @@ mp_image_t *glGetWindowScreenshot(GL *gl)
     GLint vp[4]; //x, y, w, h
     gl->GetIntegerv(GL_VIEWPORT, vp);
     mp_image_t *image = mp_image_alloc(IMGFMT_RGB24, vp[2], vp[3]);
+    if (!image)
+        return NULL;
     gl->BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     gl->PixelStorei(GL_PACK_ALIGNMENT, 1);
     gl->PixelStorei(GL_PACK_ROW_LENGTH, 0);

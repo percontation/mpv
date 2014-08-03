@@ -29,7 +29,6 @@
 #include <limits.h>
 #include <inttypes.h>
 #include <unistd.h>
-#include <ctype.h>
 #include <assert.h>
 
 #include <libavutil/common.h>
@@ -2181,10 +2180,13 @@ static int parse_rel_time(struct mp_log *log, const m_option_t *opt,
         }
     }
 
-    bool sign = bstr_eatstart0(&param, "-");
     double time;
     if (parse_timestring(param, &time, 0)) {
-        t.type = sign ? REL_TIME_NEGATIVE : REL_TIME_ABSOLUTE;
+        if (bstr_startswith0(param, "+") || bstr_startswith0(param, "-")) {
+            t.type = REL_TIME_RELATIVE;
+        } else {
+            t.type = REL_TIME_ABSOLUTE;
+        }
         t.pos = time;
         goto out;
     }

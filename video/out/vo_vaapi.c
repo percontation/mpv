@@ -196,10 +196,12 @@ static bool render_to_screen(struct priv *p, struct mp_image *mpi)
             p->black_surface = mp_image_pool_get(p->pool, IMGFMT_VAAPI, w, h);
             if (p->black_surface) {
                 struct mp_image *img = mp_image_alloc(fmt, w, h);
-                mp_image_clear(img, 0, 0, w, h);
-                if (va_surface_upload(p->black_surface, img) < 0)
-                    mp_image_unrefp(&p->black_surface);
-                talloc_free(img);
+                if (img) {
+                    mp_image_clear(img, 0, 0, w, h);
+                    if (va_surface_upload(p->black_surface, img) < 0)
+                        mp_image_unrefp(&p->black_surface);
+                    talloc_free(img);
+                }
             }
         }
         surface = va_surface_id(p->black_surface);
@@ -278,13 +280,16 @@ static void draw_image(struct vo *vo, struct mp_image *mpi)
         struct mp_image *dst = p->swdec_surfaces[p->output_surface];
         if (!dst || va_surface_upload(dst, mpi) < 0) {
             MP_WARN(vo, "Could not upload surface.\n");
+            talloc_free(mpi);
             return;
         }
         mp_image_copy_attributes(dst, mpi);
-        mpi = dst;
+        talloc_free(mpi);
+        mpi = mp_image_new_ref(dst);
     }
 
-    mp_image_setrefp(&p->output_surfaces[p->output_surface], mpi);
+    talloc_free(p->output_surfaces[p->output_surface]);
+    p->output_surfaces[p->output_surface] = mpi;
 
     draw_osd(vo);
 }
@@ -437,13 +442,13 @@ static void draw_osd(struct vo *vo)
 
 static int get_displayattribtype(const char *name)
 {
-    if (!strcasecmp(name, "brightness"))
+    if (!strcmp(name, "brightness"))
         return VADisplayAttribBrightness;
-    else if (!strcasecmp(name, "contrast"))
+    else if (!strcmp(name, "contrast"))
         return VADisplayAttribContrast;
-    else if (!strcasecmp(name, "saturation"))
+    else if (!strcmp(name, "saturation"))
         return VADisplayAttribSaturation;
-    else if (!strcasecmp(name, "hue"))
+    else if (!strcmp(name, "hue"))
         return VADisplayAttribHue;
     return -1;
 }

@@ -31,11 +31,6 @@ extern "C" {
 #endif
 
 /**
- * Warning: this API is still work in progress. This notice will be removed
- * once the API is considered reasonably stable.
- */
-
-/**
  * Mechanisms provided by this API
  * -------------------------------
  *
@@ -119,7 +114,7 @@ extern "C" {
  *   handler is process-wide, and there's no proper way to share it with other
  *   xlib users within the same process. This might confuse GUI toolkits.
  * - mpv uses some other libraries that are not library-safe, such as Fribidi
- *   (used through libass), LittleCMS, ALSA, FFmpeg, and possibly more.
+ *   (used through libass), ALSA, FFmpeg, and possibly more.
  * - The FPU precision must be set at least to double precision.
  * - On Windows, mpv will call timeBeginPeriod(1).
  * - On memory exhaustion, mpv will kill the process.
@@ -136,15 +131,39 @@ extern "C" {
  * aspect ratio of the window and the video mismatch).
  *
  * On OSX, embedding is not yet possible, because Cocoa makes this non-trivial.
+ *
+ * Compatibility
+ * -------------
+ *
+ * mpv development doesn't stand still, and changes to mpv internals as well as
+ * to its interface can cause compatibility issues to client API users.
+ *
+ * The API is versioned (see MPV_CLIENT_API_VERSION), and changes to it are
+ * documented in DOCS/client-api-changes.rst. The C API itself will probably
+ * remain compatible for a long time, but the functionality exposed by it
+ * could change more rapidly. For example, it's possible that options are
+ * renamed, or change the set of allowed values.
+ *
+ * Defensive programming should be used to potentially deal with the fact that
+ * options, commands, and properties could disappear, change their value range,
+ * or change the underlying datatypes. It might be a good idea to prefer
+ * MPV_FORMAT_STRING over other types to decouple your code from potential
+ * mpv changes.
  */
 
 /**
- * The version is incremented on each change. The 16 lower bits are incremented
- * if something in mpv is changed that might affect the client API, but doesn't
- * change C API itself (like the removal of an option or a property). The higher
- * 16 bits are incremented if the C API itself changes.
+ * The version is incremented on each API change. The 16 lower bits form the
+ * minor version number, and the 16 higher bits the major version number. If
+ * the API becomes incompatible to previous versions, the major version
+ * number is incremented. This affects only C part, and not properties and
+ * options.
+ *
+ * The version number is often converted into a human readable form by writing
+ * the major and minor version number in decimal. E.g.:
+ *      version 0x001001FF
+ *      becomes 16.511 (dec(0x0010) + "." + dec(0x01FF))
  */
-#define MPV_CLIENT_API_VERSION 0x00000000UL
+#define MPV_CLIENT_API_VERSION 0x00010002UL
 
 /**
  * Return the MPV_CLIENT_API_VERSION the mpv source has been compiled with.
@@ -916,8 +935,8 @@ typedef enum mpv_event_id {
     /**
      * Triggered by the script_message input command. The command uses the
      * first argument of the command as client name (see mpv_client_name()) to
-     * dispatch the message, and passes along the all arguments starting from
-     * the seconand argument as strings.
+     * dispatch the message, and passes along all arguments starting from the
+     * second argument as strings.
      * See also mpv_event and mpv_event_client_message.
      */
     MPV_EVENT_CLIENT_MESSAGE    = 16,
@@ -964,6 +983,7 @@ typedef enum mpv_event_id {
      * Happens when the current chapter changes.
      */
     MPV_EVENT_CHAPTER_CHANGE = 23
+    // Internal note: adjust INTERNAL_EVENT_BASE when adding new events.
 } mpv_event_id;
 
 /**

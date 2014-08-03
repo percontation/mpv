@@ -197,6 +197,7 @@ static void draw_image(struct vo *vo, struct mp_image *mpi)
     p->vo_pts = mpi->pts;
     p->fns.prepare_texture(vo, mpi);
     do_render(vo);
+    talloc_free(mpi);
 }
 
 static void uninit(struct vo *vo)
@@ -287,7 +288,8 @@ static mp_image_t *get_screenshot(struct vo *vo, CVPixelBufferRef pbuf)
     img.stride[0] = stride;
 
     struct mp_image *image = mp_image_new_copy(&img);
-    mp_image_set_attributes(image, vo->params);
+    if (image)
+        mp_image_set_attributes(image, vo->params);
     CVPixelBufferUnlockBaseAddress(pbuf, 0);
 
     return image;

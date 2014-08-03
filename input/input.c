@@ -28,7 +28,6 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <fcntl.h>
-#include <ctype.h>
 #include <pthread.h>
 #include <assert.h>
 
@@ -123,6 +122,7 @@ struct input_ctx {
     bool mainthread_set;
     struct mp_log *log;
     struct mpv_global *global;
+    struct input_opts *opts;
 
     bool using_alt_gr;
     bool using_ar;
@@ -159,6 +159,9 @@ struct input_ctx {
     // Mouse position on the producer side (as the VO sees it)
     // Unlike mouse_x/y, this can be used to resolve mouse click bindings.
     int mouse_vo_x, mouse_vo_y;
+
+    bool mouse_mangle, mouse_src_mangle;
+    struct mp_rect mouse_src, mouse_dst;
 
     bool test;
 
@@ -207,6 +210,7 @@ struct input_opts {
     int use_appleremote;
     int use_media_keys;
     int default_bindings;
+    int enable_mouse_movements;
     int test;
 };
 
@@ -226,6 +230,7 @@ const struct m_sub_options input_config = {
         OPT_FLAG("lirc", use_lirc, CONF_GLOBAL),
         OPT_FLAG("right-alt-gr", use_alt_gr, CONF_GLOBAL),
         OPT_INTRANGE("key-fifo-size", key_fifo_size, CONF_GLOBAL, 2, 65000),
+        OPT_FLAG("cursor", enable_mouse_movements, CONF_GLOBAL),
     #if HAVE_LIRC
         OPT_STRING("lirc-conf", lirc_configfile, CONF_GLOBAL),
     #endif
@@ -243,6 +248,7 @@ const struct m_sub_options input_config = {
         .ar_rate = 40,
         .use_lirc = 1,
         .use_alt_gr = 1,
+        .enable_mouse_movements = 1,
 #if HAVE_COCOA
         .use_appleremote = 1,
         .use_media_keys = 1,
@@ -557,6 +563,7 @@ static void release_down_cmd(struct input_ctx *ictx, bool drop_current)
     if (!drop_current && ictx->current_down_cmd &&
         ictx->current_down_cmd->key_up_follows)
     {
+        memset(ictx->key_history, 0, sizeof(ictx->key_history));
         ictx->current_down_cmd->key_up_follows = false;
         queue_add_tail(&ictx->cmd_queue, ictx->current_down_cmd);
         ictx->got_new_events = true;
@@ -596,15 +603,10 @@ static struct mp_cmd *resolve_key(struct input_ctx *ictx, int code)
 {
     update_mouse_section(ictx);
     struct mp_cmd *cmd = get_cmd_from_keys(ictx, NULL, code);
-    if (cmd && cmd->id != MP_CMD_IGNORE) {
-        memset(ictx->key_history, 0, sizeof(ictx->key_history));
-        if (!should_drop_cmd(ictx, cmd))
-            return cmd;
-        talloc_free(cmd);
-        return NULL;
-    }
-    talloc_free(cmd);
     key_buf_add(ictx->key_history, code);
+    if (cmd && cmd->id != MP_CMD_IGNORE && !should_drop_cmd(ictx, cmd))
+        return cmd;
+    talloc_free(cmd);
     return NULL;
 }
 
@@ -673,6 +675,8 @@ static void interpret_key(struct input_ctx *ictx, int code, double scale)
         return;
     }
 
+    memset(ictx->key_history, 0, sizeof(ictx->key_history));
+
     cmd->scale = scale;
 
     if (cmd->key_up_follows)
@@ -688,6 +692,8 @@ static void mp_input_feed_key(struct input_ctx *ictx, int code, double scale)
         release_down_cmd(ictx, false);
         return;
     }
+    if (!ictx->opts->enable_mouse_movements && MP_KEY_IS_MOUSE(unmod))
+        return;
     if (unmod == MP_KEY_MOUSE_LEAVE) {
         update_mouse_section(ictx);
         struct mp_cmd *cmd = get_cmd_from_keys(ictx, NULL, code);
@@ -741,10 +747,49 @@ void mp_input_put_axis(struct input_ctx *ictx, int direction, double value)
     input_unlock(ictx);
 }
 
+void mp_input_set_mouse_transform(struct input_ctx *ictx, struct mp_rect *dst,
+                                  struct mp_rect *src)
+{
+    input_lock(ictx);
+    ictx->mouse_mangle = dst || src;
+    if (ictx->mouse_mangle) {
+        ictx->mouse_dst = *dst;
+        ictx->mouse_src_mangle = !!src;
+        if (ictx->mouse_src_mangle)
+            ictx->mouse_src = *src;
+    }
+    input_unlock(ictx);
+}
+
+bool mp_input_mouse_enabled(struct input_ctx *ictx)
+{
+    input_lock(ictx);
+    bool r = ictx->opts->enable_mouse_movements;
+    input_unlock(ictx);
+    return r;
+}
+
 void mp_input_set_mouse_pos(struct input_ctx *ictx, int x, int y)
 {
     input_lock(ictx);
     MP_DBG(ictx, "mouse move %d/%d\n", x, y);
+
+    if (!ictx->opts->enable_mouse_movements) {
+        input_unlock(ictx);
+        return;
+    }
+
+    if (ictx->mouse_mangle) {
+        struct mp_rect *src = &ictx->mouse_src;
+        struct mp_rect *dst = &ictx->mouse_dst;
+        x = MPCLAMP(x, dst->x0, dst->x1) - dst->x0;
+        y = MPCLAMP(y, dst->y0, dst->y1) - dst->y0;
+        if (ictx->mouse_src_mangle) {
+            x = x * 1.0 / (dst->x1 - dst->x0) * (src->x1 - src->x0) + src->x0;
+            y = y * 1.0 / (dst->y1 - dst->y0) * (src->y1 - src->y0) + src->y0;
+        }
+        MP_DBG(ictx, "-> %d/%d\n", x, y);
+    }
 
     ictx->mouse_event_counter++;
     ictx->mouse_vo_x = x;
@@ -1453,6 +1498,7 @@ static int parse_config_file(struct input_ctx *ictx, char *file, bool warn)
         MP_ERR(ictx, "Can't open input config file %s.\n", file);
         goto done;
     }
+    stream_skip_bom(s);
     bstr data = stream_read_complete(s, tmp, 1000000);
     if (data.start) {
         MP_VERBOSE(ictx, "Parsing input config file %s\n", file);
@@ -1490,6 +1536,7 @@ struct input_ctx *mp_input_init(struct mpv_global *global)
     struct input_ctx *ictx = talloc_ptrtype(NULL, ictx);
     *ictx = (struct input_ctx){
         .global = global,
+        .opts = input_conf,
         .log = mp_log_new(ictx, global->log, "input"),
         .key_fifo_size = input_conf->key_fifo_size,
         .doubleclick_time = input_conf->doubleclick_time,
@@ -1523,7 +1570,7 @@ struct input_ctx *mp_input_init(struct mpv_global *global)
 #ifndef __MINGW32__
     int ret = mp_make_wakeup_pipe(ictx->wakeup_pipe);
     if (ret < 0)
-        MP_ERR(ictx, "Failed to initialize wakeup pipe: %s\n", strerror(-ret));
+        MP_ERR(ictx, "Failed to initialize wakeup pipe.\n");
     else
         mp_input_add_fd(ictx, ictx->wakeup_pipe[0], true, NULL, read_wakeup,
                         NULL, NULL);

@@ -32,15 +32,14 @@
 enum streamtype {
     STREAMTYPE_GENERIC = 0,
     STREAMTYPE_FILE,
-    STREAMTYPE_RADIO,
     STREAMTYPE_DVB,
     STREAMTYPE_DVD,
     STREAMTYPE_BLURAY,
-    STREAMTYPE_PVR,
     STREAMTYPE_TV,
     STREAMTYPE_MF,
     STREAMTYPE_EDL,
     STREAMTYPE_AVDEVICE,
+    STREAMTYPE_CDDA,
 };
 
 #define STREAM_BUFFER_SIZE 2048
@@ -82,9 +81,6 @@ enum stream_ctrl {
     STREAM_CTRL_GET_CACHE_IDLE,
     STREAM_CTRL_RESUME_CACHE,
     STREAM_CTRL_RECONNECT,
-    // DVD/Bluray, signal general support for GET_CURRENT_TIME etc.
-    STREAM_CTRL_MANAGES_TIMELINE,
-    STREAM_CTRL_GET_START_TIME,
     STREAM_CTRL_GET_CHAPTER_TIME,
     STREAM_CTRL_GET_DVD_INFO,
     STREAM_CTRL_SET_CONTENTS,
@@ -105,6 +101,7 @@ enum stream_ctrl {
     STREAM_CTRL_TV_LAST_CHAN,
     STREAM_CTRL_DVB_SET_CHANNEL,
     STREAM_CTRL_DVB_STEP_CHANNEL,
+    STREAM_CTRL_AVSEEK,
 };
 
 struct stream_lang_req {
@@ -123,6 +120,13 @@ struct stream_dvd_info_req {
 #define TV_COLOR_HUE            2
 #define TV_COLOR_SATURATION     3
 #define TV_COLOR_CONTRAST       4
+
+// for STREAM_CTRL_AVSEEK
+struct stream_avseek {
+    int stream_index;
+    int64_t timestamp;
+    int flags;
+};
 
 struct stream;
 typedef struct stream_info_st {
@@ -200,6 +204,8 @@ int stream_enable_cache(stream_t **stream, struct mp_cache_opts *opts);
 // Internal
 int stream_cache_init(stream_t *cache, stream_t *stream,
                       struct mp_cache_opts *opts);
+int stream_file_cache_init(stream_t *cache, stream_t *stream,
+                           struct mp_cache_opts *opts);
 
 int stream_write_buffer(stream_t *s, unsigned char *buf, int len);
 
@@ -243,19 +249,12 @@ stream_t *open_memory_stream(void *data, int len);
 
 bool stream_check_interrupt(struct stream *s);
 
-bool stream_manages_timeline(stream_t *s);
-
-typedef struct {
-    int id; // 0 - 31 mpeg; 128 - 159 ac3; 160 - 191 pcm
-    int language;
-    int type;
-    int channels;
-} stream_language_t;
-
 void mp_url_unescape_inplace(char *buf);
 char *mp_url_escape(void *talloc_ctx, const char *s, const char *ok);
 
 // stream_file.c
 char *mp_file_url_to_filename(void *talloc_ctx, bstr url);
+
+void stream_print_proto_list(struct mp_log *log);
 
 #endif /* MPLAYER_STREAM_H */

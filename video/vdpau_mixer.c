@@ -45,8 +45,10 @@ struct mp_image *mp_vdpau_mixed_frame_create(struct mp_image *base)
     frame->field = VDP_VIDEO_MIXER_PICTURE_STRUCTURE_FRAME;
 
     struct mp_image *mpi = mp_image_new_custom_ref(base, frame, free_mixed_frame);
-    mpi->planes[2] = (void *)frame;
-    mpi->planes[3] = (void *)(uintptr_t)VDP_INVALID_HANDLE;
+    if (mpi) {
+        mpi->planes[2] = (void *)frame;
+        mpi->planes[3] = (void *)(uintptr_t)VDP_INVALID_HANDLE;
+    }
     return mpi;
 }
 
@@ -232,7 +234,7 @@ int mp_vdpau_mixer_render(struct mp_vdpau_mixer *mixer,
         mixer->initialized = false;
 
     if (!mixer->initialized || !opts_equal(opts, &mixer->opts) ||
-        !mp_image_params_equals(&video->params, &mixer->image_params))
+        !mp_image_params_equal(&video->params, &mixer->image_params))
     {
         mixer->opts = *opts;
         mixer->image_params = video->params;

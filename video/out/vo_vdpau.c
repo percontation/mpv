@@ -847,27 +847,21 @@ static void draw_image(struct vo *vo, struct mp_image *mpi)
 {
     struct vdpctx *vc = vo->priv;
 
-    mp_image_setrefp(&vc->current_image, mpi);
+    check_preemption(vo);
+
+    struct mp_image *vdp_mpi = mp_vdpau_upload_video_surface(vc->mpvdp, mpi);
+    if (vdp_mpi) {
+        mp_image_copy_attributes(vdp_mpi, mpi);
+    } else {
+        MP_ERR(vo, "Could not upload image.\n");
+    }
+    talloc_free(mpi);
+
+    talloc_free(vc->current_image);
+    vc->current_image = vdp_mpi;
 
     if (status_ok(vo))
         video_to_output_surface(vo);
-}
-
-static struct mp_image *filter_image(struct vo *vo, struct mp_image *mpi)
-{
-    struct vdpctx *vc = vo->priv;
-
-    check_preemption(vo);
-
-    struct mp_image *reserved_mpi = mp_vdpau_upload_video_surface(vc->mpvdp, mpi);
-    if (!reserved_mpi)
-        goto end;
-
-    mp_image_copy_attributes(reserved_mpi, mpi);
-
-end:
-    talloc_free(mpi);
-    return reserved_mpi;
 }
 
 // warning: the size and pixel format of surface must match that of the
@@ -883,6 +877,9 @@ static struct mp_image *read_output_surface(struct vo *vo,
         return NULL;
 
     struct mp_image *image = mp_image_alloc(IMGFMT_BGR32, width, height);
+    if (!image)
+        return NULL;
+
     image->params.colorspace = MP_CSP_RGB;
     // hardcoded with conv. matrix
     image->params.colorlevels = vo->params->outputlevels;
@@ -1144,7 +1141,6 @@ const struct vo_driver video_out_vdpau = {
     .reconfig = reconfig,
     .control = control,
     .draw_image = draw_image,
-    .filter_image = filter_image,
     .flip_page_timed = flip_page_timed,
     .uninit = uninit,
     .priv_size = sizeof(struct vdpctx),

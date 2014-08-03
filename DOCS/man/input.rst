@@ -10,6 +10,11 @@ value (upper case if combined with ``Shift``), or a name for special keys. For
 example, ``a`` maps to the ``a`` key without shift, and ``A`` maps to ``a``
 with shift.
 
+The file is normally located in ``~/.config/mpv/input.conf`` (some platforms
+may use different paths). The default bindings are defined here::
+
+    https://github.com/mpv-player/mpv/blob/master/etc/input.conf
+
 A list of special keys can be obtained with
 
     ``mpv --input-keylist``
@@ -193,6 +198,8 @@ List of Input Commands
         Stop playback of the current file, and play the new file immediately.
     <append>
         Append the file to the playlist.
+    <append-play>
+        Append the file, and if nothing is currently playing, start playback.
 
     The third argument is a list of options and values which should be set
     while the file is playing. It is of the form ``opt1=value1,opt2=value2,..``.
@@ -613,11 +620,6 @@ Property list
 ``stream-end``
     Raw end position in bytes in source stream.
 
-``stream-time-pos`` (RW)
-    Time position in source stream. This only works for DVD and Bluray. This
-    is probably never different from ``time-pos``, because ``time-pos`` is
-    forced to this value anyway.
-
 ``length``
     Length of the current file in seconds. If the length is unknown, the
     property is unavailable. Note that the file duration is not always exactly
@@ -657,6 +659,9 @@ Property list
 
 ``playtime-remaining``
     ``time-remaining`` scaled by the the current ``speed``.
+
+``playback-time``
+    Return the playback time, which is the time difference between start PTS and current PTS.
 
 ``chapter`` (RW)
     Current chapter number. The number of the first chapter is 0.
@@ -791,7 +796,7 @@ Property list
     pauses itself due to low network cache.
 
 ``cache``
-    Network cache fill state (0-100).
+    Network cache fill state (0-100.0).
 
 ``cache-size`` (RW)
     Total network cache size in KB. This is similar to ``--cache``. This allows
@@ -804,6 +809,16 @@ Property list
     old cache is still allocated.
 
     Don't use this when playing DVD or Bluray.
+
+``cache-free`` (R)
+    Total free cache size in KB.
+
+``cache-used`` (R)
+    Total used cache size in KB.
+
+``cache-idle`` (R)
+    Returns ``yes`` if the cache is idle, which means the cache is filled as
+    much as possible, and is currently not reading more data.
 
 ``paused-for-cache``
     Returns ``yes`` when playback is paused because of waiting for the cache.
@@ -871,6 +886,9 @@ Property list
 
 ``colormatrix-output-range`` (RW)
     See ``--colormatrix-output-range``.
+
+``colormatrix-primaries`` (RW)
+    See ``--colormatrix-primaries``.
 
 ``ontop`` (RW)
     See ``--ontop``.
@@ -949,6 +967,9 @@ Property list
     ``video-params/colorlevels``
         The colorlevels as string. (Exact values subject to change.)
 
+    ``video-params/primaries``
+        The primaries in use as string. (Exact values subject to change.)
+
     ``video-params/chroma-location``
         Chroma location as string. (Exact values subject to change.)
 
@@ -972,6 +993,7 @@ Property list
                 "par"               MPV_FORMAT_DOUBLE
                 "colormatrix"       MPV_FORMAT_STRING
                 "colorlevels"       MPV_FORMAT_STRING
+                "primaries"         MPV_FORMAT_STRING
                 "chroma-location"   MPV_FORMAT_STRING
                 "rotate"            MPV_FORMAT_INT64
 
@@ -1240,9 +1262,9 @@ Property list
     changed at runtime by writing to this property. Note that many options
     require reloading the file for changes to take effect. If there is an
     equivalent property, prefer setting the property instead.
-    
-``write_watch_later_config``
-    Saves current playback position.
+
+``property-list``
+    Return the list of top-level properties.
 
 Property Expansion
 ------------------

@@ -146,6 +146,10 @@ static void drain(struct ao *ao)
     struct ao_push_state *p = ao->api_priv;
 
     pthread_mutex_lock(&p->lock);
+    if (p->paused) {
+        pthread_mutex_unlock(&p->lock);
+        return;
+    }
     p->final_chunk = true;
     p->drain = true;
     wakeup_playthread(ao);
@@ -154,7 +158,8 @@ static void drain(struct ao *ao)
     pthread_mutex_unlock(&p->lock);
 
     if (!ao->driver->drain)
-        ao_wait_drain(ao);
+        mp_sleep_us(get_delay(ao) * 1000000);
+    reset(ao);
 }
 
 static int unlocked_get_space(struct ao *ao)
@@ -365,11 +370,12 @@ static int init(struct ao *ao)
     mp_audio_buffer_reinit_fmt(p->buffer, ao->format,
                                &ao->channels, ao->samplerate);
     mp_audio_buffer_preallocate_min(p->buffer, ao->buffer);
-    if (pthread_create(&p->thread, NULL, playthread, ao)) {
-        ao->driver->uninit(ao);
-        return -1;
-    }
+    if (pthread_create(&p->thread, NULL, playthread, ao))
+        goto err;
     return 0;
+err:
+    ao->driver->uninit(ao);
+    return -1;
 }
 
 const struct ao_driver ao_api_push = {

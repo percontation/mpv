@@ -15,9 +15,15 @@ build_options = [
         'default': 'disable',
         'func': check_true
     }, {
+        'name': '--libmpv-static',
+        'desc': 'static library',
+        'default': 'disable',
+        'deps_neg': [ 'libmpv-shared' ],
+        'func': check_true
+    }, {
         'name': '--client-api-examples',
         'desc': 'build client API examples',
-        'deps': ['libmpv-shared'],
+        'deps_any': [ 'libmpv-shared', 'libmpv-static' ],
         'func': check_true
     }, {
         'name': '--static-build',
@@ -27,6 +33,11 @@ build_options = [
     }, {
         'name': '--build-date',
         'desc': 'whether to include binary compile time',
+        'default': 'enable',
+        'func': check_true
+    }, {
+        'name': '--optimize',
+        'desc': 'whether to optimize',
         'default': 'enable',
         'func': check_true
     }, {
@@ -112,10 +123,10 @@ main_dependencies = [
     }, {
         'name': 'stdatomic',
         'desc': 'stdatomic.h',
-        'func':
+        'func': check_libs(['atomic'],
             check_statement('stdatomic.h',
-                '_Atomic int test = ATOMIC_VAR_INIT(123);'
-                'int test2 = atomic_load(&test)')
+                'atomic_int_least64_t test = ATOMIC_VAR_INIT(123);'
+                'int test2 = atomic_load(&test)'))
     }, {
         'name': 'atomic-builtins',
         'desc': 'compiler support for __atomic built-ins',
@@ -132,12 +143,10 @@ main_dependencies = [
                     'test = __sync_add_and_fetch(&test, 1)'),
         'deps_neg': [ 'stdatomic', 'atomic-builtins' ],
     }, {
-        'name': 'thread-synchronization-builtins',
+        'name': 'atomics',
         'desc': 'compiler support for usable thread synchronization built-ins',
         'func': check_true,
         'deps_any': ['stdatomic', 'atomic-builtins', 'sync-builtins'],
-        'req': True,
-        'fmsg': 'your compiler must support either __atomic or __sync built-ins',
     }, {
         'name': 'librt',
         'desc': 'linking with -lrt',
@@ -313,7 +322,7 @@ If you really mean to compile without libass support use --disable-libass."
     }, {
         'name': '--lcms2',
         'desc': 'LCMS2 support',
-        'func': check_pkg_config('lcms2'),
+        'func': check_pkg_config('lcms2', '>= 2.6'),
     }, {
         'name': '--vapoursynth',
         'desc': 'VapourSynth filter bridge',
@@ -358,6 +367,12 @@ Libav libraries ({0}). Aborting.".format(" ".join(libav_pkg_config_checks))
         'func': check_statement('libavcodec/avcodec.h', """int x, y;
             avcodec_enum_to_chroma_pos(&x, &y, AVCHROMA_LOC_UNSPECIFIED)""",
             use='libav')
+    }, {
+        'name': 'avcol-spc-bt2020',
+        'desc': 'libavcodec avcol_spc_bt2020 available',
+        'func': check_statement('libavcodec/avcodec.h',
+                                'int x = AVCOL_SPC_BT2020_NCL',
+                                use='libav')
     }, {
         'name': 'avutil-qp-api',
         'desc': 'libavutil QP API',
@@ -407,11 +422,13 @@ audio_output_features = [
     {
         'name': '--sdl2',
         'desc': 'SDL2',
+        'deps': ['atomics'],
         'func': check_pkg_config('sdl2'),
         'default': 'disable'
     }, {
         'name': '--sdl1',
         'desc': 'SDL (1.x)',
+        'deps': ['atomics'],
         'deps_neg': [ 'sdl2' ],
         'func': check_pkg_config('sdl'),
         'default': 'disable'
@@ -462,16 +479,17 @@ audio_output_features = [
     }, {
         'name': '--pulse',
         'desc': 'PulseAudio audio output',
-        'func': check_pkg_config('libpulse', '>= 0.9')
+        'func': check_pkg_config('libpulse', '>= 1.0')
     }, {
         'name': '--portaudio',
         'desc': 'PortAudio audio output',
-        'deps': [ 'pthreads' ],
+        'deps': [ 'atomics' ],
         'func': check_pkg_config('portaudio-2.0', '>= 19'),
         'default': 'disable',
     }, {
         'name': '--jack',
         'desc': 'JACK audio output',
+        'deps': ['atomics'],
         'func': check_pkg_config('jack'),
     }, {
         'name': '--openal',
@@ -485,6 +503,7 @@ audio_output_features = [
     }, {
         'name': '--coreaudio',
         'desc': 'CoreAudio audio output',
+        'deps': ['atomics'],
         'func': check_cc(
             fragment=load_fragment('coreaudio.c'),
             framework_name=['CoreFoundation', 'CoreAudio', 'AudioUnit', 'AudioToolbox'])
@@ -495,6 +514,7 @@ audio_output_features = [
     }, {
         'name': '--wasapi',
         'desc': 'WASAPI audio output',
+        'deps': ['atomics'],
         'func': check_cc(fragment=load_fragment('wasapi.c'), lib='ole32'),
     }
 ]
@@ -663,27 +683,13 @@ hwaccel_features = [
     } , {
         'name': '--vda-hwaccel',
         'desc': 'libavcodec VDA hwaccel',
-        'deps': [ 'corevideo'],
+        'deps': [ 'corevideo' ],
         'func': compose_checks(
             check_headers('VideoDecodeAcceleration/VDADecoder.h'),
             check_statement('libavcodec/vda.h',
-                            'ff_vda_create_decoder(NULL, NULL, NULL)',
+                            'av_vda_alloc_context()',
                             framework='IOSurface',
                             use='libav')),
-    } , {
-        'name': 'vda-libavcodec-refcounting',
-        'desc': "libavcodec VDA ref-counted CVPixelBuffers",
-        'deps': [ 'vda-hwaccel' ],
-        'func': check_statement ('libavcodec/vda.h',
-            """struct vda_context a = (struct vda_context) {
-                   .use_ref_buffer = 1 }""", use='libav')
-    }, {
-        'name': 'vda-av-vda-alloc-context',
-        'desc': "libavcodec VDA hwaccel 1.2",
-        'deps': [ 'vda-hwaccel' ],
-        'func': check_statement('libavcodec/vda.h',
-                                'av_vda_alloc_context()',
-                                use='libav')
     }, {
         'name': '--vda-gl',
         'desc': 'VDA with OpenGL',
@@ -773,6 +779,10 @@ def options(opt):
         help    = "select Lua package which should be autodetected. Choices: 51 51deb 51fbsd 52 52deb 52fbsd luajit")
 
 @conf
+def is_optimization(ctx):
+    return getattr(ctx.options, 'enable_optimize')
+
+@conf
 def is_debug_build(ctx):
     return getattr(ctx.options, 'enable_debug-build')
 
@@ -806,14 +816,6 @@ def configure(ctx):
     ctx.load('dependencies')
     ctx.load('detections.compiler')
     ctx.load('detections.devices')
-
-    if ctx.env.DEST_OS in ('freebsd', 'openbsd'):
-        ctx.env.CFLAGS += ['-I.', '-I..', '-I/usr/local/include']
-        ctx.env.LINKFLAGS += ['-L/usr/local/lib']
-
-    if ctx.env.DEST_OS == 'netbsd':
-        ctx.env.CFLAGS += ['-I/usr/pkg/include']
-        ctx.env.LINKFLAGS += ['-L/usr/pkg/lib']
 
     ctx.parse_dependencies(build_options)
     ctx.parse_dependencies(main_dependencies)

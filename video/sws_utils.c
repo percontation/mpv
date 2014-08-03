@@ -119,8 +119,8 @@ static bool cache_valid(struct mp_sws_context *ctx)
     struct mp_sws_context *old = ctx->cached;
     if (ctx->force_reload)
         return false;
-    return mp_image_params_equals(&ctx->src, &old->src) &&
-           mp_image_params_equals(&ctx->dst, &old->dst) &&
+    return mp_image_params_equal(&ctx->src, &old->src) &&
+           mp_image_params_equal(&ctx->dst, &old->dst) &&
            ctx->flags == old->flags &&
            ctx->brightness == old->brightness &&
            ctx->contrast == old->contrast &&
@@ -254,8 +254,8 @@ int mp_sws_reinit(struct mp_sws_context *ctx)
 int mp_sws_scale(struct mp_sws_context *ctx, struct mp_image *dst,
                  struct mp_image *src)
 {
-    mp_image_params_from_image(&ctx->src, src);
-    mp_image_params_from_image(&ctx->dst, dst);
+    ctx->src = src->params;
+    ctx->dst = dst->params;
 
     int r = mp_sws_reinit(ctx);
     if (r < 0) {

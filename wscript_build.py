@@ -5,18 +5,18 @@ def _add_rst_manual_dependencies(ctx):
         options.rst ao.rst vo.rst af.rst vf.rst encode.rst
         input.rst osc.rst lua.rst changes.rst""".split()
 
-    manpage_sources = ['DOCS/man/en/'+x for x in manpage_sources_basenames]
+    manpage_sources = ['DOCS/man/'+x for x in manpage_sources_basenames]
 
     for manpage_source in manpage_sources:
         ctx.add_manual_dependency(
-            ctx.path.find_node('DOCS/man/en/mpv.rst'),
+            ctx.path.find_node('DOCS/man/mpv.rst'),
             ctx.path.find_node(manpage_source))
 
 def _build_man(ctx):
     ctx(
         name         = 'rst2man',
-        target       = 'DOCS/man/en/mpv.1',
-        source       = 'DOCS/man/en/mpv.rst',
+        target       = 'DOCS/man/mpv.1',
+        source       = 'DOCS/man/mpv.rst',
         rule         = '${RST2MAN} ${SRC} ${TGT}',
         install_path = ctx.env.MANDIR + '/man1')
 
@@ -25,8 +25,8 @@ def _build_man(ctx):
 def _build_pdf(ctx):
     ctx(
         name         = 'rst2pdf',
-        target       = 'DOCS/man/en/mpv.pdf',
-        source       = 'DOCS/man/en/mpv.rst',
+        target       = 'DOCS/man/mpv.pdf',
+        source       = 'DOCS/man/mpv.rst',
         rule         = '${RST2PDF} -c --repeat-table-rows ${SRC} -o ${TGT}',
         install_path = ctx.env.DOCDIR)
 
@@ -134,6 +134,7 @@ def build(ctx):
         ( "audio/out/ao.c" ),
         ( "audio/out/ao_alsa.c",                 "alsa" ),
         ( "audio/out/ao_coreaudio.c",            "coreaudio" ),
+        ( "audio/out/ao_coreaudio_device.c",     "coreaudio" ),
         ( "audio/out/ao_coreaudio_properties.c", "coreaudio" ),
         ( "audio/out/ao_coreaudio_utils.c",      "coreaudio" ),
         ( "audio/out/ao_dsound.c",               "dsound" ),
@@ -160,7 +161,6 @@ def build(ctx):
         ## Core
         ( "common/av_common.c" ),
         ( "common/av_log.c" ),
-        ( "common/av_opts.c" ),
         ( "common/codecs.c" ),
         ( "common/encode_lavc.c",                "encoding" ),
         ( "common/common.c" ),
@@ -173,6 +173,7 @@ def build(ctx):
         ( "demux/codec_tags.c" ),
         ( "demux/demux.c" ),
         ( "demux/demux_cue.c" ),
+        ( "demux/demux_disc.c" ),
         ( "demux/demux_edl.c" ),
         ( "demux/demux_lavf.c" ),
         ( "demux/demux_libass.c",                "libass"),
@@ -181,8 +182,10 @@ def build(ctx):
         ( "demux/demux_playlist.c" ),
         ( "demux/demux_raw.c" ),
         ( "demux/demux_subreader.c" ),
+        ( "demux/demux_tv.c",                    "tv" ),
         ( "demux/ebml.c" ),
         ( "demux/mf.c" ),
+        ( "demux/packet.c" ),
 
         ## Input
         ( "input/cmd_list.c" ),
@@ -197,6 +200,7 @@ def build(ctx):
         ( "misc/charset_conv.c" ),
         ( "misc/dispatch.c" ),
         ( "misc/ring.c" ),
+        ( "misc/rendezvous.c" ),
 
         ## Options
         ( "options/m_config.c" ),
@@ -233,6 +237,7 @@ def build(ctx):
         ( "stream/ai_sndio.c",                   "sndio" ),
         ( "stream/audio_in.c",                   "audio-input" ),
         ( "stream/cache.c" ),
+        ( "stream/cache_file.c" ),
         ( "stream/cookies.c" ),
         ( "stream/dvb_tune.c",                   "dvbin" ),
         ( "stream/frequencies.c",                "tv" ),
@@ -296,6 +301,7 @@ def build(ctx):
         ( "video/decode/vdpau.c",                "vdpau-hwaccel" ),
         ( "video/filter/pullup.c" ),
         ( "video/filter/vf.c" ),
+        ( "video/filter/vf_buffer.c" ),
         ( "video/filter/vf_crop.c" ),
         ( "video/filter/vf_delogo.c" ),
         ( "video/filter/vf_divtc.c" ),
@@ -439,26 +445,38 @@ def build(ctx):
         **cprog_kwargs
     )
 
-    if ctx.dependency_satisfied('libmpv-shared'):
-        ctx.load("syms")
+    build_shared = ctx.dependency_satisfied('libmpv-shared')
+    build_static = ctx.dependency_satisfied('libmpv-static')
+    if build_shared or build_static:
+        if build_shared:
+            ctx.load("syms")
         vnum = int(re.search('^#define MPV_CLIENT_API_VERSION 0x(.*)UL$',
                              ctx.path.find_node("libmpv/client.h").read(),
                              re.M)
                    .group(1), 16)
-        libversion = (str(vnum >> 24) + '.' +
-                      str((vnum >> 16) & 0xff) + '.' +
-                      str(vnum & 0xffff))
-        ctx(
-            target       = "mpv",
-            source       = ctx.filtered_sources(sources),
-            use          = ctx.dependencies_use(),
-            includes     = [ctx.bldnode.abspath(), ctx.srcnode.abspath()] + \
-                            ctx.dependencies_includes(),
-            features     = "c cshlib syms",
-            export_symbols_regex = 'mpv_.*',
-            install_path = ctx.env.LIBDIR,
-            vnum         = libversion,
-        )
+        libversion = str(vnum >> 16) + '.' + str(vnum & 0xffff) + '.0'
+
+        def _build_libmpv(shared):
+            features = "c "
+            if shared:
+                features += "cshlib syms"
+            else:
+                features += "cstlib"
+            ctx(
+                target       = "mpv",
+                source       = ctx.filtered_sources(sources),
+                use          = ctx.dependencies_use(),
+                includes     = [ctx.bldnode.abspath(), ctx.srcnode.abspath()] + \
+                                ctx.dependencies_includes(),
+                features     = features,
+                export_symbols_regex = 'mpv_.*',
+                install_path = ctx.env.LIBDIR,
+                vnum         = libversion,
+            )
+        if build_shared:
+            _build_libmpv(True)
+        if build_static:
+            _build_libmpv(False)
 
         ctx(
             target       = 'libmpv/mpv.pc',

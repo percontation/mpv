@@ -429,7 +429,7 @@ void mp_msg_update_msglevels(struct mpv_global *global)
     root->show_time = opts->msg_time;
     if (root->use_terminal) {
         root->color = opts->msg_color && isatty(fileno(stdout));
-        root->termosd = !opts->slave_mode && isatty(fileno(stderr));
+        root->termosd = isatty(fileno(stderr));
     }
 
     talloc_free(root->msglevels);
@@ -468,6 +468,10 @@ struct mp_log_buffer *mp_msg_log_buffer_new(struct mpv_global *global,
                                             void *wakeup_cb_ctx)
 {
     struct mp_log_root *root = global->log->root;
+
+#if !HAVE_ATOMICS
+    return NULL;
+#endif
 
     pthread_mutex_lock(&mp_msg_lock);
 

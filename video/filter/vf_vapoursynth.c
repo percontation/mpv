@@ -205,7 +205,8 @@ static void VS_CC vs_frame_done(void *userData, const VSFrameRef *f, int n,
             MP_ERR(vf, "No PTS after filter at frame %d!\n", n);
         res = mp_image_new_copy(&img);
         p->vsapi->freeFrame(f);
-    } else {
+    }
+    if (!res) {
         p->failed = true;
         MP_ERR(vf, "Filter error at frame %d: %s\n", n, errorMsg);
     }
@@ -433,6 +434,7 @@ static void destroy_vs(struct vf_instance *vf)
     p->next_image = NULL;
     p->out_pts = MP_NOPTS_VALUE;
     p->out_frameno = p->in_frameno = 0;
+    p->failed = false;
 
     MP_DBG(vf, "uninitialized.\n");
 }

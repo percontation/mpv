@@ -115,6 +115,7 @@ static void draw_image(struct vo *vo, mp_image_t *mpi)
     memcpy_pic(priv->dither_buffer, mpi->planes[0], priv->image_width * depth, priv->image_height,
                priv->image_width * depth, mpi->stride[0]);
     caca_dither_bitmap(priv->canvas, 0, 0, priv->screen_w, priv->screen_h, priv->dither, priv->dither_buffer);
+    talloc_free(mpi);
 }
 
 static void flip_page(struct vo *vo)
@@ -177,16 +178,14 @@ static void check_events(struct vo *vo)
             mp_input_put_key(vo->input_ctx, MP_KEY_CLOSE_WIN);
             break;
         case CACA_EVENT_MOUSE_MOTION:
-            vo_mouse_movement(vo, cev.data.mouse.x, cev.data.mouse.y);
+            mp_input_set_mouse_pos(vo->input_ctx, cev.data.mouse.x, cev.data.mouse.y);
             break;
         case CACA_EVENT_MOUSE_PRESS:
-            if (vo->opts->enable_mouse_movements)
-                mp_input_put_key(vo->input_ctx,
+            mp_input_put_key(vo->input_ctx,
                     (MP_MOUSE_BTN0 + cev.data.mouse.button - 1) | MP_KEY_STATE_DOWN);
             break;
         case CACA_EVENT_MOUSE_RELEASE:
-            if (vo->opts->enable_mouse_movements)
-                mp_input_put_key(vo->input_ctx,
+            mp_input_put_key(vo->input_ctx,
                     (MP_MOUSE_BTN0 + cev.data.mouse.button - 1) | MP_KEY_STATE_UP);
             break;
         case CACA_EVENT_KEY_PRESS:

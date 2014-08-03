@@ -7,7 +7,7 @@ use warnings;
 
 my $mpv = $ARGV[0] || 'mpv';
 
-my @opts = parse_opts("$mpv --list-options", '^ (\-\-[^\s\*]*)\*?\s*(.*)');
+my @opts = parse_opts("$mpv --list-options", '^ (\-\-[^\s\*]*)\*?\s*(.*)', 1);
 
 my @ao = parse_opts("$mpv --ao=help", '^  ([^\s\:]*)\s*: (.*)');
 my @vo = parse_opts("$mpv --vo=help", '^  ([^\s\:]*)\s*: (.*)');
@@ -15,9 +15,11 @@ my @vo = parse_opts("$mpv --vo=help", '^  ([^\s\:]*)\s*: (.*)');
 my @af = parse_opts("$mpv --af=help", '^  ([^\s\:]*)\s*: (.*)');
 my @vf = parse_opts("$mpv --vf=help", '^  ([^\s\:]*)\s*: (.*)');
 
-my ($opts_str, $ao_str, $vo_str, $af_str, $vf_str);
+my @protos = parse_opts("$mpv --list-protocols", '^ ([^\s]*)');
 
-$opts_str .= qq{  '$_': \\\n} foreach (@opts);
+my ($opts_str, $ao_str, $vo_str, $af_str, $vf_str, $protos_str);
+
+$opts_str .= qq{  '$_' \\\n} foreach (@opts);
 chomp $opts_str;
 
 $ao_str .= qq{      '$_' \\\n} foreach (@ao);
@@ -32,12 +34,15 @@ chomp $af_str;
 $vf_str .= qq{      '$_' \\\n} foreach (@vf);
 chomp $vf_str;
 
+$protos_str .= qq{$_ } foreach (@protos);
+chomp $protos_str;
+
 my $tmpl = <<"EOS";
 #compdef mpv
 
 # mpv zsh completion
 
-_x_arguments -C -s \\
+_arguments -C -S \\
 $opts_str
   '*:files:->mfiles'
 
@@ -86,7 +91,7 @@ $vf_str
       if _requested urls; then
         while _next_label urls expl URL; do
           _urls "\$expl[@]" && ret=0
-          compadd -S '' "\$expl[@]" \{dvd,vcd,cdda,cddb,tv\}:// && ret=0
+          compadd -S '' "\$expl[@]" $protos_str && ret=0
         done
       fi
       (( ret )) || return 0
@@ -98,32 +103,49 @@ EOS
 print $tmpl;
 
 sub parse_opts {
-	my ($cmd, $regex) = @_;
+    my ($cmd, $regex, $parsing_main_options) = @_;
 
-	my @list;
-	my @lines = split /\n/, `$cmd`;
+    my @list;
+    my @lines = split /\n/, `$cmd`;
 
-	foreach my $line (@lines) {
-		if ($line !~ /^$regex/) {
-			next;
-		}
+    foreach my $line (@lines) {
+        if ($line !~ /^$regex/) {
+            next;
+        }
 
-		my $entry = "$1:";
+        my $entry = $1;
 
-		if (defined $2) {
-			my $desc = $2;
-			$desc =~ s/\:/\\:/;
+        if ($parsing_main_options) {
+            $entry .= '=-';
+        }
 
-			$entry .= $desc;
-		}
+        if (defined $2) {
+            my $desc = $2;
+            $desc =~ s/\:/\\:/g;
 
-		$entry .= ':->ao' if ($1 eq '--ao');
-		$entry .= ':->vo' if ($1 eq '--vo');
-		$entry .= ':->af' if ($1 eq '--af');
-		$entry .= ':->vf' if ($1 eq '--vf');
+            $entry .= ':' . $desc;
+        }
 
-		push @list, $entry if ($line =~ /^$regex/)
-	}
+        if ($parsing_main_options) {
+            $entry .= ':';
 
-	return @list;
+            $entry .= '->ao' if ($1 eq '--ao');
+            $entry .= '->vo' if ($1 eq '--vo');
+            $entry .= '->af' if ($1 eq '--af');
+            $entry .= '->vf' if ($1 eq '--vf');
+        }
+
+        push @list, $entry
+    }
+
+    if ($parsing_main_options) {
+        @list = sort {
+            $a =~ /(.*?)\:/; my $ma = $1;
+            $b =~ /(.*?)\:/; my $mb = $1;
+
+            length($mb) <=> length($ma)
+        } @list;
+    }
+
+    return @list;
 }

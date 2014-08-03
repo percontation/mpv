@@ -57,6 +57,7 @@
 #include "sub/draw_bmp.h"
 #include "video/csputils.h"
 #include "options/m_option.h"
+#include "input/input.h"
 #include "osdep/timer.h"
 
 #define CK_METHOD_NONE       0 // no colorkey drawing
@@ -140,29 +141,29 @@ static int xv_find_atom(struct vo *vo, uint32_t xv_port, const char *name,
    then trigger it if it's ok so that the other values are at default upon query */
             if (atom != None) {
                 if (!strcmp(attributes[i].name, "XV_BRIGHTNESS") &&
-                    (!strcasecmp(name, "brightness")))
+                    (!strcmp(name, "brightness")))
                     break;
                 else if (!strcmp(attributes[i].name, "XV_CONTRAST") &&
-                         (!strcasecmp(name, "contrast")))
+                         (!strcmp(name, "contrast")))
                     break;
                 else if (!strcmp(attributes[i].name, "XV_SATURATION") &&
-                         (!strcasecmp(name, "saturation")))
+                         (!strcmp(name, "saturation")))
                     break;
                 else if (!strcmp(attributes[i].name, "XV_HUE") &&
-                         (!strcasecmp(name, "hue")))
+                         (!strcmp(name, "hue")))
                     break;
                 if (!strcmp(attributes[i].name, "XV_RED_INTENSITY") &&
-                    (!strcasecmp(name, "red_intensity")))
+                    (!strcmp(name, "red_intensity")))
                     break;
                 else if (!strcmp(attributes[i].name, "XV_GREEN_INTENSITY")
-                         && (!strcasecmp(name, "green_intensity")))
+                         && (!strcmp(name, "green_intensity")))
                     break;
                 else if (!strcmp(attributes[i].name, "XV_BLUE_INTENSITY")
-                         && (!strcasecmp(name, "blue_intensity")))
+                         && (!strcmp(name, "blue_intensity")))
                     break;
                 else if ((!strcmp(attributes[i].name, "XV_ITURBT_709") //NVIDIA
                           || !strcmp(attributes[i].name, "XV_COLORSPACE")) //ATI
-                         && (!strcasecmp(name, "bt_709")))
+                         && (!strcmp(name, "bt_709")))
                     break;
                 atom = None;
                 continue;
@@ -412,6 +413,8 @@ static void resize(struct vo *vo)
     xv_draw_colorkey(vo, &ctx->dst_rect);
     read_xv_csp(vo);
 
+    mp_input_set_mouse_transform(vo->input_ctx, &ctx->dst_rect, &ctx->src_rect);
+
     vo->want_redraw = true;
 }
 
@@ -655,7 +658,7 @@ static mp_image_t *get_screenshot(struct vo *vo)
     return mp_image_new_ref(ctx->original_image);
 }
 
-// Note: redraw_frame() can call this with NULL.
+// Note: REDRAW_FRAME can call this with NULL.
 static void draw_image(struct vo *vo, mp_image_t *mpi)
 {
     struct xvctx *ctx = vo->priv;
@@ -672,15 +675,10 @@ static void draw_image(struct vo *vo, mp_image_t *mpi)
     struct mp_osd_res res = osd_res_from_image_params(vo->params);
     osd_draw_on_image(vo->osd, res, mpi ? mpi->pts : 0, 0, &xv_buffer);
 
-    mp_image_setrefp(&ctx->original_image, mpi);
-}
-
-static int redraw_frame(struct vo *vo)
-{
-    struct xvctx *ctx = vo->priv;
-
-    draw_image(vo, ctx->original_image);
-    return true;
+    if (mpi != ctx->original_image) {
+        talloc_free(ctx->original_image);
+        ctx->original_image = mpi;
+    }
 }
 
 static int query_format(struct vo *vo, uint32_t format)
@@ -794,17 +792,9 @@ static int preinit(struct vo *vo)
     }
     if (!ctx->xv_port) {
         if (busy_ports)
-            MP_ERR(vo,
-                   "Could not find free Xvideo port - maybe another process is already\n"\
-                   "using it. Close all video applications, and try again. If that does\n"\
-                   "not help, see 'mpv -vo help' for other (non-xv) video out drivers.\n");
+            MP_ERR(vo, "Xvideo ports busy.\n");
         else
-            MP_ERR(vo,
-                   "It seems there is no Xvideo support for your video card available.\n"\
-                   "Run 'xvinfo' to verify its Xv support and read\n"\
-                   "DOCS/HTML/en/video.html#xv!\n"\
-                   "See 'mpv -vo help' for other (non-xv) video out drivers.\n"\
-                   "Try -vo x11.\n");
+            MP_ERR(vo, "No Xvideo support found.\n");
         goto error;
     }
 
@@ -849,22 +839,12 @@ static int control(struct vo *vo, uint32_t request, void *data)
         return true;
     }
     case VOCTRL_REDRAW_FRAME:
-        redraw_frame(vo);
+        draw_image(vo, ctx->original_image);
         return true;
     case VOCTRL_SCREENSHOT: {
         struct voctrl_screenshot_args *args = data;
         args->out_image = get_screenshot(vo);
         return true;
-    }
-    case VOCTRL_WINDOW_TO_OSD_COORDS: {
-        float *c = data;
-        struct mp_rect *src = &ctx->src_rect;
-        struct mp_rect *dst = &ctx->dst_rect;
-        c[0] = av_clipf(c[0], dst->x0, dst->x1) - dst->x0;
-        c[1] = av_clipf(c[1], dst->y0, dst->y1) - dst->y0;
-        c[0] = c[0] / (dst->x1 - dst->x0) * (src->x1 - src->x0) + src->x0;
-        c[1] = c[1] / (dst->y1 - dst->y0) * (src->y1 - src->y0) + src->y0;
-        return VO_TRUE;
     }
     }
     int events = 0;

@@ -38,7 +38,6 @@
 #include "m_option.h"
 #include "common/common.h"
 #include "stream/stream.h"
-#include "stream/tv.h"
 #include "video/csputils.h"
 #include "sub/osd.h"
 #include "audio/mixer.h"
@@ -46,6 +45,7 @@
 #include "audio/decode/dec_audio.h"
 #include "player/core.h"
 #include "player/command.h"
+#include "stream/stream.h"
 
 extern const char mp_help_text[];
 
@@ -63,6 +63,7 @@ extern const struct m_sub_options tv_params_conf;
 extern const struct m_sub_options stream_pvr_conf;
 extern const struct m_sub_options stream_cdda_conf;
 extern const struct m_sub_options stream_dvb_conf;
+extern const struct m_sub_options stream_lavf_conf;
 extern const struct m_sub_options sws_conf;
 extern const struct m_sub_options demux_rawaudio_conf;
 extern const struct m_sub_options demux_rawvideo_conf;
@@ -113,6 +114,8 @@ const m_option_t mp_opts[] = {
 #if HAVE_PRIORITY
     OPT_CHOICE("priority", w32_priority, 0,
                ({"no",          0},
+                {"realtime",    REALTIME_PRIORITY_CLASS},
+                {"high",        HIGH_PRIORITY_CLASS},
                 {"abovenormal", ABOVE_NORMAL_PRIORITY_CLASS},
                 {"normal",      NORMAL_PRIORITY_CLASS},
                 {"belownormal", BELOW_NORMAL_PRIORITY_CLASS},
@@ -144,6 +147,8 @@ const m_option_t mp_opts[] = {
                       ({"no", 0})),
     OPT_INTRANGE("cache-initial", stream_cache.initial, 0, 0, 0x7fffffff),
     OPT_INTRANGE("cache-seek-min", stream_cache.seek_min, 0, 0, 0x7fffffff),
+    OPT_STRING("cache-file", stream_cache.file, 0),
+    OPT_INTRANGE("cache-file-size", stream_cache.file_max, 0, 0, 0x7fffffff),
     OPT_CHOICE_OR_INT("cache-pause-below", stream_cache_pause, 0, 0, 0x7fffffff,
                       ({"no", 0})),
     OPT_INTRANGE("cache-pause-restart", stream_cache_unpause, 0, 0, 0x7fffffff),
@@ -211,10 +216,13 @@ const m_option_t mp_opts[] = {
 #endif
 
     // demuxer.c - select audio/sub file/demuxer
-    OPT_STRING("audio-file", audio_stream, 0),
+    OPT_STRING_APPEND_LIST("audio-file", audio_files, 0),
     OPT_STRING("demuxer", demuxer_name, 0),
     OPT_STRING("audio-demuxer", audio_demuxer_name, 0),
     OPT_STRING("sub-demuxer", sub_demuxer_name, 0),
+    OPT_FLAG("demuxer-thread", demuxer_thread, 0),
+    OPT_INTRANGE("demuxer-readahead-packets", demuxer_min_packs, 0, 0, MAX_PACKS),
+    OPT_INTRANGE("demuxer-readahead-bytes", demuxer_min_bytes, 0, 0, MAX_PACK_BYTES),
 
     OPT_DOUBLE("mf-fps", mf_fps, 0),
     OPT_STRING("mf-type", mf_type, 0),
@@ -227,6 +235,7 @@ const m_option_t mp_opts[] = {
 #if HAVE_DVBIN
     OPT_SUBSTRUCT("dvbin", stream_dvb_opts, stream_dvb_conf, 0),
 #endif
+    OPT_SUBSTRUCT("", stream_lavf_opts, stream_lavf_conf, 0),
 
 // ------------------------- a-v sync options --------------------
 
@@ -390,6 +399,8 @@ const m_option_t mp_opts[] = {
                 {"BT.601", MP_CSP_BT_601},
                 {"BT.709", MP_CSP_BT_709},
                 {"SMPTE-240M", MP_CSP_SMPTE_240M},
+                {"BT.2020-NCL", MP_CSP_BT_2020_NC},
+                {"BT.2020-CL", MP_CSP_BT_2020_C},
                 {"YCgCo", MP_CSP_YCGCO})),
     OPT_CHOICE("colormatrix-input-range", requested_input_range, 0,
                ({"auto", MP_CSP_LEVELS_AUTO},
@@ -399,6 +410,12 @@ const m_option_t mp_opts[] = {
                ({"auto", MP_CSP_LEVELS_AUTO},
                 {"limited", MP_CSP_LEVELS_TV},
                 {"full", MP_CSP_LEVELS_PC})),
+    OPT_CHOICE("colormatrix-primaries", requested_primaries, 0,
+               ({"auto", MP_CSP_PRIM_AUTO},
+                {"BT.601-525", MP_CSP_PRIM_BT_601_525},
+                {"BT.601-625", MP_CSP_PRIM_BT_601_625},
+                {"BT.709", MP_CSP_PRIM_BT_709},
+                {"BT.2020", MP_CSP_PRIM_BT_2020})),
     OPT_CHOICE_OR_INT("video-rotate", video_rotate, 0, 0, 359,
                       ({"no", -1})),
 
@@ -497,10 +514,8 @@ const m_option_t mp_opts[] = {
     OPT_STRING("term-status-msg", status_msg, 0),
     OPT_STRING("osd-status-msg", osd_status_msg, 0),
 
-    OPT_FLAG("slave-broken", slave_mode, CONF_GLOBAL),
     OPT_FLAG("idle", player_idle_mode, M_OPT_GLOBAL),
     OPT_FLAG("input-terminal", consolecontrols, CONF_GLOBAL),
-    OPT_FLAG("input-cursor", vo.enable_mouse_movements, CONF_GLOBAL),
 
     OPT_SUBSTRUCT("screenshot", screenshot_image_opts, image_writer_conf, 0),
     OPT_STRING("screenshot-template", screenshot_template, 0),
@@ -508,6 +523,7 @@ const m_option_t mp_opts[] = {
     OPT_SUBSTRUCT("input", input_opts, input_config, 0),
 
     OPT_PRINT("list-properties", property_print_help),
+    OPT_PRINT("list-protocols", stream_print_proto_list),
     OPT_PRINT("help", print_help),
     OPT_PRINT("h", print_help),
     OPT_PRINT("version", print_version),
@@ -533,12 +549,12 @@ const struct MPOpts mp_default_opts = {
     .mixer_init_volume = -1,
     .mixer_init_mute = -1,
     .volstep = 3,
+    .gapless_audio = -1,
     .vo = {
         .video_driver_list = NULL,
         .monitor_pixel_aspect = 1.0,
         .screen_id = -1,
         .fsscreen_id = -1,
-        .enable_mouse_movements = 1,
         .panscan = 0.0f,
         .keepaspect = 1,
         .border = 1,
@@ -578,9 +594,13 @@ const struct MPOpts mp_default_opts = {
         .def_size = 25000,
         .initial = 0,
         .seek_min = 500,
+        .file_max = 1024 * 1024,
     },
-    .stream_cache_pause = 500,
-    .stream_cache_unpause = 1000,
+    .stream_cache_pause = 50,
+    .stream_cache_unpause = 100,
+    .demuxer_thread = 0,
+    .demuxer_min_packs = MIN_PACKS,
+    .demuxer_min_bytes = MIN_PACK_BYTES,
     .network_rtsp_transport = 2,
     .chapterrange = {-1, -1},
     .edition_id = -1,
@@ -620,11 +640,7 @@ const struct MPOpts mp_default_opts = {
     .ass_shaper = 1,
     .use_embedded_fonts = 1,
     .sub_fix_timing = 1,
-#if HAVE_ENCA
-    .sub_cp = "enca",
-#else
-    .sub_cp = "UTF-8:UTF-8-BROKEN",
-#endif
+    .sub_cp = "auto",
 
     .hwdec_codecs = "h264,vc1,wmv3",
 

@@ -40,6 +40,7 @@
 #include "sub/img_convert.h"
 
 #include "common/msg.h"
+#include "input/input.h"
 
 #include "wayland_common.h"
 #include "wayland-version.h"
@@ -474,9 +475,6 @@ static struct buffer * buffer_pool_get_no(struct buffer_pool *pool, uint32_t no)
 
 static bool redraw_frame(struct priv *p)
 {
-    if (!p->original_image)
-        return false;
-
     draw_image(p->vo, p->original_image);
     return true;
 }
@@ -503,6 +501,8 @@ static bool resize(struct priv *p)
     p->src_h = p->src.y1 - p->src.y0;
     p->dst_w = p->dst.x1 - p->dst.x0;
     p->dst_h = p->dst.y1 - p->dst.y0;
+
+    mp_input_set_mouse_transform(p->vo->input_ctx, &p->dst, NULL);
 
     MP_DBG(wl, "resizing %dx%d -> %dx%d\n", wl->window.width,
                                             wl->window.height,
@@ -658,6 +658,7 @@ static void draw_image(struct vo *vo, mp_image_t *mpi)
 
     if (!buf) {
         MP_VERBOSE(p->wl, "can't draw, back buffer is busy\n");
+        talloc_free(mpi);
         return;
     }
 
@@ -669,16 +670,24 @@ static void draw_image(struct vo *vo, mp_image_t *mpi)
         buffer_resize(&p->video_bufpool, buf, p->dst_w, p->dst_h);
     }
 
-    struct mp_image src = *mpi;
-    struct mp_rect src_rc = p->src;
-    src_rc.x0 = MP_ALIGN_DOWN(src_rc.x0, src.fmt.align_x);
-    src_rc.y0 = MP_ALIGN_DOWN(src_rc.y0, src.fmt.align_y);
-    mp_image_crop_rc(&src, src_rc);
-
     struct mp_image img = buffer_get_mp_image(p, &p->video_bufpool, buf);
-    mp_sws_scale(p->sws, &img, &src);
 
-    mp_image_setrefp(&p->original_image, mpi);
+    if (mpi) {
+        struct mp_image src = *mpi;
+        struct mp_rect src_rc = p->src;
+        src_rc.x0 = MP_ALIGN_DOWN(src_rc.x0, src.fmt.align_x);
+        src_rc.y0 = MP_ALIGN_DOWN(src_rc.y0, src.fmt.align_y);
+        mp_image_crop_rc(&src, src_rc);
+
+        mp_sws_scale(p->sws, &img, &src);
+    } else {
+        mp_image_clear(&img, 0, 0, img.w, img.h);
+    }
+
+    if (mpi != p->original_image) {
+        talloc_free(p->original_image);
+        p->original_image = mpi;
+    }
     buffer_finalise_back(buf);
 
     draw_osd(vo);
@@ -892,15 +901,6 @@ static int control(struct vo *vo, uint32_t request, void *data)
         return VO_TRUE;
     case VOCTRL_REDRAW_FRAME:
         return redraw_frame(p);
-    case VOCTRL_WINDOW_TO_OSD_COORDS:
-    {
-        // OSD is rendered into the scaled image
-        float *c = data;
-        struct mp_rect *dst = &p->dst;
-        c[0] = av_clipf(c[0], dst->x0, dst->x1) - dst->x0;
-        c[1] = av_clipf(c[1], dst->y0, dst->y1) - dst->y0;
-        return VO_TRUE;
-    }
     case VOCTRL_SCREENSHOT:
     {
         struct voctrl_screenshot_args *args = data;

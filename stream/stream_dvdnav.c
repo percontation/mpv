@@ -443,7 +443,6 @@ static int fill_buffer(stream_t *s, char *buf, int max_len)
                 if (priv->title > 0 && tit != priv->title) {
                     priv->next_event |= 1 << MP_NAV_EVENT_EOF;;
                     MP_WARN(s, "Requested title not found\n");
-                    return 0;
                 }
             }
             if (priv->nav_enabled)
@@ -546,11 +545,18 @@ static int control(stream_t *stream, int cmd, void *arg)
         return STREAM_OK;
     }
     case STREAM_CTRL_SEEK_TO_TIME: {
-        uint64_t tm = (uint64_t) (*((double *)arg) * 90000);
-        MP_VERBOSE(stream, "seek to PTS %"PRId64"\n", tm);
+        double d = *(double *)arg;
+        int64_t tm = (int64_t)(d * 90000);
+        if (tm < 0)
+            tm = 0;
+        if (priv->duration && tm >= (priv->duration * 90))
+            tm = priv->duration * 90 - 1;
+        MP_VERBOSE(stream, "seek to PTS %f (%"PRId64")\n", d, tm);
         if (dvdnav_time_search(dvdnav, tm) != DVDNAV_STATUS_OK)
             break;
         stream_drop_buffers(stream);
+        d = dvdnav_get_current_time(dvdnav) / 90000.0f;
+        MP_VERBOSE(stream, "landed at: %f\n", d);
         return STREAM_OK;
     }
     case STREAM_CTRL_GET_NUM_ANGLES: {
@@ -593,8 +599,6 @@ static int control(stream_t *stream, int cmd, void *arg)
         snprintf(req->name, sizeof(req->name), "%c%c", lang >> 8, lang);
         return STREAM_OK;
     }
-    case STREAM_CTRL_MANAGES_TIMELINE:
-        return STREAM_OK;
     case STREAM_CTRL_GET_DVD_INFO: {
         struct stream_dvd_info_req *req = arg;
         memset(req, 0, sizeof(*req));
@@ -634,6 +638,8 @@ static void stream_dvdnav_close(stream_t *s)
     priv->dvdnav = NULL;
     if (priv->dvd_speed)
         dvd_set_speed(s, priv->filename, -1);
+    if (priv->filename)
+        free(priv->filename);
 }
 
 static struct priv *new_dvdnav_stream(stream_t *stream, char *filename)
@@ -692,7 +698,7 @@ static int open_s(stream_t *stream)
         int best_title = -1;
         int32_t num_titles;
         if (dvdnav_get_number_of_titles(dvdnav, &num_titles) == DVDNAV_STATUS_OK) {
-            for (int n = 1; n < num_titles; n++) {
+            for (int n = 1; n <= num_titles; n++) {
                 uint64_t *parts = NULL, duration = 0;
                 dvdnav_describe_title_chapters(dvdnav, n, &parts, &duration);
                 if (parts) {
@@ -727,7 +733,7 @@ static int open_s(stream_t *stream)
     stream->control = control;
     stream->close = stream_dvdnav_close;
     stream->type = STREAMTYPE_DVD;
-    stream->demuxer = "lavf";
+    stream->demuxer = "+disc";
     stream->lavf_type = "mpeg";
     stream->allow_caching = false;
 
@@ -737,7 +743,7 @@ static int open_s(stream_t *stream)
 const stream_info_t stream_info_dvdnav = {
     .name = "dvdnav",
     .open = open_s,
-    .protocols = (const char*const[]){ "dvdnav", NULL },
+    .protocols = (const char*const[]){ "dvd", "dvdnav", NULL },
     .priv_size = sizeof(struct priv),
     .priv_defaults = &stream_priv_dflts,
     .options = stream_opts_fields,
